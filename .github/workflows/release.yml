@@ -76,9 +76,16 @@ jobs:
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (Test-Path $iscc) {
               Write-Host "Compiling Inno Setup installer..."
-              & $iscc "/DMyAppVersion=$ver" "/DMyBinaryDir=target\$target\release" "/DMyOutputDir=$distDir" "packaging\windows\harfiy.iss"
+              $binDir = (Resolve-Path "target\$target\release").Path
+              $outDir = (Resolve-Path $distDir).Path
+              & $iscc "/DMyAppVersion=$ver" "/DMyBinaryDir=$binDir" "/DMyOutputDir=$outDir" "packaging\windows\harfiy.iss"
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Error "Inno Setup compilation failed with code $LASTEXITCODE"
+                  exit $LASTEXITCODE
+              }
           } else {
-              Write-Warning "Inno Setup not found at $iscc"
+              Write-Error "Inno Setup not found at $iscc"
+              exit 1
           }
           
           # 2. Build portable .zip
