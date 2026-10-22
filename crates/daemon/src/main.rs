@@ -87,12 +87,12 @@ fn run_check_updates_cli() {
     let (cfg, _) = AppConfig::load_or_create();
     let current_ver = env!("CARGO_PKG_VERSION");
     println!("Harfiy v{} - Yangilanishlar tekshirilmoqda...", current_ver);
-    println!("GitHub repozitoriy: {}", cfg.github_repo);
+    println!("Yangilanish serveri: {}", cfg.update_url);
 
-    match updater::check_for_updates(&cfg.github_repo) {
+    match updater::check_for_updates(&cfg.update_url, &cfg.github_repo) {
         Ok(info) => {
             println!("Joriy versiya: v{}", info.current_version);
-            println!("GitHub'dagi eng so'nggi versiya: v{}", info.latest_version);
+            println!("Eng so'nggi versiya: v{}", info.latest_version);
             if info.has_update {
                 println!("\n⭐ Yangi versiya mavjud: v{}!", info.latest_version);
                 println!("Yuklab olish havolasi: {}", info.release_url);
@@ -239,10 +239,11 @@ fn run_daemon(no_tray: bool) {
 
     // Trigger initial background update check if enabled
     if app_config.check_updates {
+        let update_url = app_config.update_url.clone();
         let repo = app_config.github_repo.clone();
         let tx = tx_update.clone();
         thread::spawn(move || {
-            let res = updater::check_for_updates(&repo);
+            let res = updater::check_for_updates(&update_url, &repo);
             let _ = tx.send(UpdateEvent {
                 result: res,
                 is_manual: false,
@@ -325,11 +326,12 @@ fn run_daemon(no_tray: bool) {
                     TrayCommand::CheckUpdates => {
                         println!("Yangilanishlar tekshirilmoqda...");
                         tray.set_checking_updates();
+                        let update_url = app_config.update_url.clone();
                         let repo = app_config.github_repo.clone();
                         let tx = tx_update.clone();
                         thread::spawn(move || {
                             let start = std::time::Instant::now();
-                            let res = updater::check_for_updates(&repo);
+                            let res = updater::check_for_updates(&update_url, &repo);
 
                             // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1 second
                             let elapsed = start.elapsed();
@@ -347,7 +349,7 @@ fn run_daemon(no_tray: bool) {
                         let url = if let Some(info) = latest_update.lock().unwrap().as_ref() {
                             info.release_url.clone()
                         } else {
-                            format!("https://github.com/{}/releases/latest", app_config.github_repo)
+                            format!("{}/", app_config.update_url.trim_end_matches('/'))
                         };
                         println!("Yangilanish sahifasi ochilmoqda: {}", url);
                         let _ = open::that(&url);

@@ -1,0 +1,8 @@
+{
+  "version": "0.1.1",
+  "name": "Harfiy v0.1.1",
+  "url": "https://abdumannon-shamsiyev.uz/harfiy/updates/",
+  "windows": "0.1.1/harfiy-0.1.1-windows-x86_64-setup.exe",
+  "linux": "0.1.1/harfiy_0.1.1_amd64.deb",
+  "macos": "0.1.1/harfiy-0.1.1-macos-x86_64.dmg"
+}

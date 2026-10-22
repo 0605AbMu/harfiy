@@ -23,11 +23,15 @@ pub struct AppConfig {
     #[serde(default = "default_excluded_apps")]
     pub excluded_apps: Vec<String>,
 
-    /// Check for GitHub releases on launch and in tray (default: true)
+    /// Check for updates on launch and in tray (default: true)
     #[serde(default = "default_check_updates")]
     pub check_updates: bool,
 
-    /// GitHub repository to check for updates (default: "0605AbMu/harfiy")
+    /// Update URL for custom update server (default: "https://abdumannon-shamsiyev.uz/harfiy/updates")
+    #[serde(default = "default_update_url")]
+    pub update_url: String,
+
+    /// GitHub repository fallback to check for updates (default: "0605AbMu/harfiy")
     #[serde(default = "default_github_repo")]
     pub github_repo: String,
 }
@@ -38,6 +42,10 @@ fn default_enable_ng() -> bool {
 
 fn default_check_updates() -> bool {
     true
+}
+
+fn default_update_url() -> String {
+    "https://abdumannon-shamsiyev.uz/harfiy/updates".to_string()
 }
 
 fn default_github_repo() -> String {
@@ -74,6 +82,7 @@ impl Default for AppConfig {
             exceptions: default_exceptions(),
             excluded_apps: default_excluded_apps(),
             check_updates: default_check_updates(),
+            update_url: default_update_url(),
             github_repo: default_github_repo(),
         }
     }
