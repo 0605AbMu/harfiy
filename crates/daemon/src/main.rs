@@ -230,16 +230,18 @@ fn run_daemon(no_tray: bool) {
 
     // Update checker channel & state
     let latest_update: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(None));
-    let (tx_update, rx_update): (Sender<UpdateInfo>, Receiver<UpdateInfo>) = channel();
+    let (tx_update, rx_update): (
+        Sender<Result<UpdateInfo, String>>,
+        Receiver<Result<UpdateInfo, String>>,
+    ) = channel();
 
     // Trigger initial background update check if enabled
     if app_config.check_updates {
         let repo = app_config.github_repo.clone();
         let tx = tx_update.clone();
         thread::spawn(move || {
-            if let Ok(info) = updater::check_for_updates(&repo) {
-                let _ = tx.send(info);
-            }
+            let res = updater::check_for_updates(&repo);
+            let _ = tx.send(res);
         });
     }
 
@@ -251,17 +253,25 @@ fn run_daemon(no_tray: bool) {
         pump_messages();
 
         // Process asynchronous update notifications
-        if let Ok(info) = rx_update.try_recv() {
+        if let Ok(update_result) = rx_update.try_recv() {
             if let Some(tray) = &tray_controller {
-                if info.has_update {
-                    println!("\n⭐ [YANGILANISH] Yangi versiya mavjud: v{}!", info.latest_version);
-                    println!("Yuklab olish: {}", info.release_url);
-                    tray.set_update_available(&info.latest_version);
-                } else {
-                    tray.set_up_to_date();
+                match update_result {
+                    Ok(info) => {
+                        if info.has_update {
+                            println!("\n⭐ [YANGILANISH] Yangi versiya mavjud: v{}!", info.latest_version);
+                            println!("Yuklab olish: {}", info.release_url);
+                            tray.set_update_available(&info.latest_version);
+                        } else {
+                            tray.set_up_to_date();
+                        }
+                        *latest_update.lock().unwrap() = Some(info);
+                    }
+                    Err(e) => {
+                        eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
+                        tray.set_up_to_date();
+                    }
                 }
             }
-            *latest_update.lock().unwrap() = Some(info);
         }
 
         // Process System Tray events
@@ -282,14 +292,8 @@ fn run_daemon(no_tray: bool) {
                         let repo = app_config.github_repo.clone();
                         let tx = tx_update.clone();
                         thread::spawn(move || {
-                            match updater::check_for_updates(&repo) {
-                                Ok(info) => {
-                                    let _ = tx.send(info);
-                                }
-                                Err(e) => {
-                                    eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
-                                }
-                            }
+                            let res = updater::check_for_updates(&repo);
+                            let _ = tx.send(res);
                         });
                     }
                     TrayCommand::DownloadUpdate => {

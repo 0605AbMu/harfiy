@@ -50,25 +50,42 @@ pub fn check_for_updates(repo: &str) -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION");
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
 
-    let response: GitHubRelease = ureq::get(&url)
+    let res = ureq::get(&url)
         .set("User-Agent", &format!("harfiy/{}", current_version))
         .set("Accept", "application/vnd.github.v3+json")
         .timeout(std::time::Duration::from_secs(6))
-        .call()
-        .map_err(|e| format!("GitHub API xatoligi: {}", e))?
-        .into_json()
-        .map_err(|e| format!("Javobni tahlil qilishda xatolik: {}", e))?;
+        .call();
 
-    let latest_ver = response.tag_name.trim_start_matches('v').to_string();
-    let has_update = is_newer_version(&latest_ver, current_version);
+    match res {
+        Ok(response) => {
+            let release: GitHubRelease = response
+                .into_json()
+                .map_err(|e| format!("Javobni tahlil qilishda xatolik: {}", e))?;
 
-    Ok(UpdateInfo {
-        current_version: current_version.to_string(),
-        latest_version: latest_ver,
-        has_update,
-        release_url: response.html_url,
-        release_name: response.name.unwrap_or(response.tag_name),
-    })
+            let latest_ver = release.tag_name.trim_start_matches('v').to_string();
+            let has_update = is_newer_version(&latest_ver, current_version);
+
+            Ok(UpdateInfo {
+                current_version: current_version.to_string(),
+                latest_version: latest_ver,
+                has_update,
+                release_url: release.html_url,
+                release_name: release.name.unwrap_or(release.tag_name),
+            })
+        }
+        Err(ureq::Error::Status(404, _)) => {
+            // 404 indicates either no releases published yet or repository is private.
+            // Treat the currently running version as the latest.
+            Ok(UpdateInfo {
+                current_version: current_version.to_string(),
+                latest_version: current_version.to_string(),
+                has_update: false,
+                release_url: format!("https://github.com/{}/releases", repo),
+                release_name: format!("v{}", current_version),
+            })
+        }
+        Err(e) => Err(format!("GitHub API xatoligi: {}", e)),
+    }
 }
 
 #[cfg(test)]
