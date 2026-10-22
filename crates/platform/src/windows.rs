@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
-use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
     INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
@@ -24,6 +24,39 @@ use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
 /// Magic tag attached to `dwExtraInfo` in synthetic keystrokes to prevent infinite loops.
 /// ASCII value for "HARF".
 pub const HARFIY_MAGIC_FLAG: usize = 0x48415246;
+
+/// Named Mutex guard for ensuring only one instance of Harfiy runs at a time.
+pub struct SingleInstanceGuard {
+    handle: HANDLE,
+}
+
+// Safety: The Win32 mutex handle is thread-safe and can be sent across threads.
+unsafe impl Send for SingleInstanceGuard {}
+unsafe impl Sync for SingleInstanceGuard {}
+
+impl Drop for SingleInstanceGuard {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.handle);
+        }
+    }
+}
+
+/// Try to acquire the single instance lock for Harfiy.
+/// Returns Some(guard) if this is the only instance, or None if another instance is already running.
+pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
+    use windows::core::w;
+
+    unsafe {
+        let handle = CreateMutexW(None, true, w!("HarfiySingleInstanceMutex")).ok()?;
+        if GetLastError().0 == 183 {
+            // ERROR_ALREADY_EXISTS (183)
+            let _ = CloseHandle(handle);
+            return None;
+        }
+        Some(SingleInstanceGuard { handle })
+    }
+}
 
 /// Global state held during the active keyboard hook.
 struct HookState {

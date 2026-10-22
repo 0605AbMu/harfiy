@@ -60,7 +60,16 @@ fn main() {
             println!("Harfiy daemon status: Ready / Standby.");
         }
         Some(Commands::Stop) => {
-            println!("Signal to stop Harfiy sent.");
+            #[cfg(windows)]
+            {
+                println!("Fonda ishlayotgan Harfiy xizmatiga to'xtatish signali yuborilmoqda...");
+                let _ = harfiy_platform::WindowsInterceptor::stop_hook();
+                println!("To'xtatish signali yuborildi.");
+            }
+            #[cfg(not(windows))]
+            {
+                println!("Signal yuborildi.");
+            }
         }
         Some(Commands::CheckUpdates) => {
             run_check_updates_cli();
@@ -102,6 +111,15 @@ fn run_check_updates_cli() {
 }
 
 fn run_daemon(no_tray: bool) {
+    // Single instance protection: prevent duplicate hooks and installer file locks
+    let _instance_guard = match harfiy_platform::acquire_single_instance_lock() {
+        Some(guard) => guard,
+        None => {
+            println!("Harfiy allaqachon fonda ishlamoqda. Dasturning faqat bitta nusxasi ishlashi mumkin.");
+            return;
+        }
+    };
+
     let (app_config, config_path) = AppConfig::load_or_create();
     let current_ver = env!("CARGO_PKG_VERSION");
 

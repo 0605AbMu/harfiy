@@ -63,4 +63,41 @@ pub trait KeyboardEmitter: Send + Sync {
 pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
-pub use self::windows::{pump_messages, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG};
+pub use self::windows::{
+    acquire_single_instance_lock, pump_messages, SingleInstanceGuard, WindowsEmitter,
+    WindowsInterceptor, HARFIY_MAGIC_FLAG,
+};
+
+#[cfg(unix)]
+pub struct SingleInstanceGuard {
+    _file: std::fs::File,
+}
+
+#[cfg(unix)]
+pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
+    use std::os::unix::io::AsRawFd;
+    let lock_path = std::env::temp_dir().join("harfiy.lock");
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path)
+        .ok()?;
+
+    let fd = file.as_raw_fd();
+    let res = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+    if res == 0 {
+        Some(SingleInstanceGuard { _file: file })
+    } else {
+        None
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+pub struct SingleInstanceGuard;
+
+#[cfg(not(any(windows, unix)))]
+pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
+    Some(SingleInstanceGuard)
+}
