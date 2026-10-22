@@ -68,6 +68,12 @@ pub use self::windows::{
     WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
+#[cfg(target_os = "macos")]
+pub use self::macos::{MacOsEmitter, MacOsInterceptor};
+
+#[cfg(target_os = "linux")]
+pub use self::linux::{LinuxEmitter, LinuxInterceptor};
+
 #[cfg(unix)]
 pub struct SingleInstanceGuard {
     _file: std::fs::File,
