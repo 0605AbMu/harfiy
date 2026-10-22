@@ -23,7 +23,7 @@ use crate::config::AppConfig;
 #[derive(Parser)]
 #[command(name = "harfiy")]
 #[command(author = "Abdumannon Shamsiyev")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "Real-time Uzbek Latin orthography auto-conversion daemon", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -68,7 +68,7 @@ fn main() {
 
 fn run_daemon(no_tray: bool) {
     let (app_config, config_path) = AppConfig::load_or_create();
-    println!("Harfiy v0.1.0 faollashtirilmoqda...");
+    println!("Harfiy v{} faollashtirilmoqda...", env!("CARGO_PKG_VERSION"));
     println!("Sozlamalar fayli: {}", config_path.display());
     println!("Qoidalar: 'sh' -> 'ş', 'ch' -> 'ç', 'o''' -> 'ö', 'g''' -> 'ğ'");
     if app_config.enable_ng {

@@ -58,6 +58,18 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
+      - name: Sync Cargo.toml version with Git tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          echo "Syncing all Cargo.toml packages to Git tag version: ${VERSION}"
+          if [ -n "$VERSION" ]; then
+            for f in crates/*/Cargo.toml; do
+              sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" "$f"
+              rm -f "${f}.bak"
+            done
+          fi
+
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
