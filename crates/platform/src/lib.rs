@@ -64,9 +64,20 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
 pub use self::windows::{
-    acquire_single_instance_lock, pump_messages, SingleInstanceGuard, WindowsEmitter,
-    WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    acquire_single_instance_lock, pump_messages, show_confirm_dialog, show_info_dialog,
+    SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
+
+#[cfg(not(windows))]
+pub fn show_info_dialog(title: &str, message: &str) {
+    println!("[{}] {}", title, message);
+}
+
+#[cfg(not(windows))]
+pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
+    println!("[{}] {}", title, message);
+    true
+}
 
 #[cfg(target_os = "macos")]
 pub use self::macos::{MacOsEmitter, MacOsInterceptor};

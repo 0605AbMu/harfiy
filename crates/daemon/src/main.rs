@@ -228,12 +228,14 @@ fn run_daemon(no_tray: bool) {
         None
     };
 
+    struct UpdateEvent {
+        result: Result<UpdateInfo, String>,
+        is_manual: bool,
+    }
+
     // Update checker channel & state
     let latest_update: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(None));
-    let (tx_update, rx_update): (
-        Sender<Result<UpdateInfo, String>>,
-        Receiver<Result<UpdateInfo, String>>,
-    ) = channel();
+    let (tx_update, rx_update): (Sender<UpdateEvent>, Receiver<UpdateEvent>) = channel();
 
     // Trigger initial background update check if enabled
     if app_config.check_updates {
@@ -241,7 +243,10 @@ fn run_daemon(no_tray: bool) {
         let tx = tx_update.clone();
         thread::spawn(move || {
             let res = updater::check_for_updates(&repo);
-            let _ = tx.send(res);
+            let _ = tx.send(UpdateEvent {
+                result: res,
+                is_manual: false,
+            });
         });
     }
 
@@ -253,22 +258,53 @@ fn run_daemon(no_tray: bool) {
         pump_messages();
 
         // Process asynchronous update notifications
-        if let Ok(update_result) = rx_update.try_recv() {
+        if let Ok(event) = rx_update.try_recv() {
             if let Some(tray) = &tray_controller {
-                match update_result {
+                match event.result {
                     Ok(info) => {
                         if info.has_update {
                             println!("\n⭐ [YANGILANISH] Yangi versiya mavjud: v{}!", info.latest_version);
                             println!("Yuklab olish: {}", info.release_url);
                             tray.set_update_available(&info.latest_version);
+
+                            if event.is_manual {
+                                let msg = format!(
+                                    "Harfiy dasturining yangi versiyasi mavjud!\n\nJoriy versiya: v{}\nYangi versiya: v{}\n\nYuklab olish sahifasini ochishni xohlaysizmi?",
+                                    info.current_version, info.latest_version
+                                );
+                                let download_url = info.release_url.clone();
+                                thread::spawn(move || {
+                                    if harfiy_platform::show_confirm_dialog("Harfiy - Yangilanish mavjud", &msg) {
+                                        let _ = open::that(&download_url);
+                                    }
+                                });
+                            }
                         } else {
                             tray.set_up_to_date();
+                            if event.is_manual {
+                                let msg = format!(
+                                    "Siz eng so'nggi versiyadan foydalanmoqdasiz (v{}).\nHech qanday yangilanish talab etilmaydi.",
+                                    info.current_version
+                                );
+                                thread::spawn(move || {
+                                    harfiy_platform::show_info_dialog("Harfiy", &msg);
+                                });
+                            }
                         }
                         *latest_update.lock().unwrap() = Some(info);
                     }
                     Err(e) => {
                         eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
                         tray.set_up_to_date();
+                        if event.is_manual {
+                            let msg = format!(
+                                "Yangilanishlarni tekshirishda xatolik yuz berdi:\n{}\n\nIltimos, internet aloqasini tekshiring.",
+                                e
+                            );
+                            thread::spawn(move || {
+                                harfiy_platform::show_info_dialog("Harfiy - Xatolik", &msg);
+                            });
+                        }
                     }
                 }
             }
@@ -295,13 +331,16 @@ fn run_daemon(no_tray: bool) {
                             let start = std::time::Instant::now();
                             let res = updater::check_for_updates(&repo);
 
-                            // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1.5 seconds
+                            // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1 second
                             let elapsed = start.elapsed();
-                            if elapsed < Duration::from_millis(1500) {
-                                thread::sleep(Duration::from_millis(1500) - elapsed);
+                            if elapsed < Duration::from_millis(1000) {
+                                thread::sleep(Duration::from_millis(1000) - elapsed);
                             }
 
-                            let _ = tx.send(res);
+                            let _ = tx.send(UpdateEvent {
+                                result: res,
+                                is_manual: true,
+                            });
                         });
                     }
                     TrayCommand::DownloadUpdate => {

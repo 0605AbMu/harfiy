@@ -14,9 +14,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW,
-    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG,
-    PM_NOREMOVE, PM_REMOVE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
+    CallNextHookEx, DispatchMessageW, GetMessageW, MessageBoxW, PeekMessageW, PostThreadMessageW,
+    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES, KBDLLHOOKSTRUCT,
+    MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG, PM_NOREMOVE, PM_REMOVE,
+    WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
 };
 
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
@@ -55,6 +56,37 @@ pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
             return None;
         }
         Some(SingleInstanceGuard { handle })
+    }
+}
+
+/// Show a native informational message dialog.
+pub fn show_info_dialog(title: &str, message: &str) {
+    use windows::core::HSTRING;
+    let t = HSTRING::from(title);
+    let m = HSTRING::from(message);
+    unsafe {
+        let _ = MessageBoxW(
+            None,
+            windows::core::PCWSTR(m.as_ptr()),
+            windows::core::PCWSTR(t.as_ptr()),
+            MB_OK | MB_ICONINFORMATION,
+        );
+    }
+}
+
+/// Show a native confirmation dialog (Yes / No).
+pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
+    use windows::core::HSTRING;
+    let t = HSTRING::from(title);
+    let m = HSTRING::from(message);
+    unsafe {
+        let res = MessageBoxW(
+            None,
+            windows::core::PCWSTR(m.as_ptr()),
+            windows::core::PCWSTR(t.as_ptr()),
+            MB_YESNO | MB_ICONQUESTION,
+        );
+        res == IDYES
     }
 }
 
