@@ -276,10 +276,6 @@ fn run_daemon(no_tray: bool) {
                             if active { "Faol" } else { "To'xtatilgan" }
                         );
                     }
-                    TrayCommand::OpenSettings => {
-                        println!("Sozlamalar: {}", config_path.display());
-                        let _ = open::that(&config_path);
-                    }
                     TrayCommand::CheckUpdates => {
                         println!("Yangilanishlar tekshirilmoqda...");
                         tray.set_checking_updates();
