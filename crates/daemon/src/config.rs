@@ -22,10 +22,26 @@ pub struct AppConfig {
     /// Executable names where auto-conversion should be temporarily suspended
     #[serde(default = "default_excluded_apps")]
     pub excluded_apps: Vec<String>,
+
+    /// Check for GitHub releases on launch and in tray (default: true)
+    #[serde(default = "default_check_updates")]
+    pub check_updates: bool,
+
+    /// GitHub repository to check for updates (default: "harfiy/harfiy")
+    #[serde(default = "default_github_repo")]
+    pub github_repo: String,
 }
 
 fn default_enable_ng() -> bool {
     false
+}
+
+fn default_check_updates() -> bool {
+    true
+}
+
+fn default_github_repo() -> String {
+    "harfiy/harfiy".to_string()
 }
 
 fn default_hotkey() -> String {
@@ -57,6 +73,8 @@ impl Default for AppConfig {
             hotkey: default_hotkey(),
             exceptions: default_exceptions(),
             excluded_apps: default_excluded_apps(),
+            check_updates: default_check_updates(),
+            github_repo: default_github_repo(),
         }
     }
 }

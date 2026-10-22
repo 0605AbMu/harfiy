@@ -2,8 +2,10 @@
 //! Real-time Uzbek Latin orthography conversion engine.
 
 mod config;
+mod updater;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -19,6 +21,7 @@ use harfiy_platform::{KeyboardInterceptor, LinuxInterceptor};
 use harfiy_tray::{TrayCommand, TrayController};
 
 use crate::config::AppConfig;
+use crate::updater::UpdateInfo;
 
 #[derive(Parser)]
 #[command(name = "harfiy")]
@@ -45,6 +48,8 @@ enum Commands {
     Status,
     /// Stop running daemon instance
     Stop,
+    /// Check for updates from GitHub Releases
+    CheckUpdates,
 }
 
 fn main() {
@@ -57,6 +62,9 @@ fn main() {
         Some(Commands::Stop) => {
             println!("Signal to stop Harfiy sent.");
         }
+        Some(Commands::CheckUpdates) => {
+            run_check_updates_cli();
+        }
         Some(Commands::Start { no_tray }) => {
             run_daemon(no_tray);
         }
@@ -66,9 +74,38 @@ fn main() {
     }
 }
 
+fn run_check_updates_cli() {
+    let (cfg, _) = AppConfig::load_or_create();
+    let current_ver = env!("CARGO_PKG_VERSION");
+    println!("Harfiy v{} - Yangilanishlar tekshirilmoqda...", current_ver);
+    println!("GitHub repozitoriy: {}", cfg.github_repo);
+
+    match updater::check_for_updates(&cfg.github_repo) {
+        Ok(info) => {
+            println!("Joriy versiya: v{}", info.current_version);
+            println!("GitHub'dagi eng so'nggi versiya: v{}", info.latest_version);
+            if info.has_update {
+                println!("\n⭐ Yangi versiya mavjud: v{}!", info.latest_version);
+                println!("Yuklab olish havolasi: {}", info.release_url);
+                println!("Brauzerda ochish uchun Enter bosing...");
+                let mut buf = String::new();
+                let _ = std::io::stdin().read_line(&mut buf);
+                let _ = open::that(&info.release_url);
+            } else {
+                println!("\n✅ Siz eng so'nggi versiyadan foydalanmoqdasiz.");
+            }
+        }
+        Err(e) => {
+            eprintln!("Yangilanishni tekshirishda xatolik yuz berdi: {}", e);
+        }
+    }
+}
+
 fn run_daemon(no_tray: bool) {
     let (app_config, config_path) = AppConfig::load_or_create();
-    println!("Harfiy v{} faollashtirilmoqda...", env!("CARGO_PKG_VERSION"));
+    let current_ver = env!("CARGO_PKG_VERSION");
+
+    println!("Harfiy v{} faollashtirilmoqda...", current_ver);
     println!("Sozlamalar fayli: {}", config_path.display());
     println!("Qoidalar: 'sh' -> 'ş', 'ch' -> 'ç', 'o''' -> 'ö', 'g''' -> 'ğ'");
     if app_config.enable_ng {
@@ -159,7 +196,7 @@ fn run_daemon(no_tray: bool) {
 
     // System Tray Controller
     let mut tray_controller = if !no_tray {
-        match TrayController::new(true) {
+        match TrayController::new(true, current_ver) {
             Ok(controller) => Some(controller),
             Err(e) => {
                 eprintln!(
@@ -173,6 +210,21 @@ fn run_daemon(no_tray: bool) {
         None
     };
 
+    // Update checker channel & state
+    let latest_update: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(None));
+    let (tx_update, rx_update): (Sender<UpdateInfo>, Receiver<UpdateInfo>) = channel();
+
+    // Trigger initial background update check if enabled
+    if app_config.check_updates {
+        let repo = app_config.github_repo.clone();
+        let tx = tx_update.clone();
+        thread::spawn(move || {
+            if let Ok(info) = updater::check_for_updates(&repo) {
+                let _ = tx.send(info);
+            }
+        });
+    }
+
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
 
     // Main event loop
@@ -180,6 +232,21 @@ fn run_daemon(no_tray: bool) {
         #[cfg(windows)]
         pump_messages();
 
+        // Process asynchronous update notifications
+        if let Ok(info) = rx_update.try_recv() {
+            if let Some(tray) = &tray_controller {
+                if info.has_update {
+                    println!("\n⭐ [YANGILANISH] Yangi versiya mavjud: v{}!", info.latest_version);
+                    println!("Yuklab olish: {}", info.release_url);
+                    tray.set_update_available(&info.latest_version);
+                } else {
+                    tray.set_up_to_date();
+                }
+            }
+            *latest_update.lock().unwrap() = Some(info);
+        }
+
+        // Process System Tray events
         if let Some(tray) = &tray_controller {
             if let Some(cmd) = tray.poll_events() {
                 match cmd {
@@ -193,6 +260,32 @@ fn run_daemon(no_tray: bool) {
                     }
                     TrayCommand::OpenSettings => {
                         println!("Sozlamalar: {}", config_path.display());
+                        let _ = open::that(&config_path);
+                    }
+                    TrayCommand::CheckUpdates => {
+                        println!("Yangilanishlar tekshirilmoqda...");
+                        tray.set_checking_updates();
+                        let repo = app_config.github_repo.clone();
+                        let tx = tx_update.clone();
+                        thread::spawn(move || {
+                            match updater::check_for_updates(&repo) {
+                                Ok(info) => {
+                                    let _ = tx.send(info);
+                                }
+                                Err(e) => {
+                                    eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
+                                }
+                            }
+                        });
+                    }
+                    TrayCommand::DownloadUpdate => {
+                        let url = if let Some(info) = latest_update.lock().unwrap().as_ref() {
+                            info.release_url.clone()
+                        } else {
+                            format!("https://github.com/{}/releases/latest", app_config.github_repo)
+                        };
+                        println!("Yangilanish sahifasi ochilmoqda: {}", url);
+                        let _ = open::that(&url);
                     }
                     TrayCommand::Quit => {
                         println!("Tizim panelidan chiqish buyrug'i berildi.");

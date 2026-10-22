@@ -25,10 +25,12 @@ pub enum TrayError {
 }
 
 /// Commands triggered from tray menu or hotkeys.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayCommand {
     ToggleActive(bool),
     OpenSettings,
+    CheckUpdates,
+    DownloadUpdate,
     Quit,
 }
 
@@ -38,23 +40,47 @@ pub struct TrayController {
     _hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
     active_item: CheckMenuItem,
+    update_info_item: MenuItem,
+    update_action_item: MenuItem,
+    check_updates_item: MenuItem,
     quit_item: MenuItem,
     is_active: Arc<AtomicBool>,
 }
 
 impl TrayController {
-    /// Create and initialize the system tray icon and hotkey (Ctrl + Shift + U).
-    pub fn new(initial_active: bool) -> Result<Self, TrayError> {
+    /// Create and initialize the system tray icon, menu, and hotkey (Ctrl + Shift + U).
+    pub fn new(initial_active: bool, current_version: &str) -> Result<Self, TrayError> {
         let is_active = Arc::new(AtomicBool::new(initial_active));
 
-        // Create tray menu
+        // Create tray menu items
         let tray_menu = Menu::new();
+
+        // 1. Version header (displays current version e.g. "Harfiy v0.1.0")
+        let version_item = MenuItem::new(format!("Harfiy v{} (Joriy)", current_version), false, None);
+
+        // 2. Update info item (displays update status / new version)
+        let update_info_item = MenuItem::new("✅ Eng so'nggi versiya", false, None);
+
+        // 3. Update action item (Download update button, enabled when update is available)
+        let update_action_item = MenuItem::new("🚀 Yangilash", false, None);
+
+        // 4. Manual check updates button
+        let check_updates_item = MenuItem::new("🔄 Yangilanishlarni tekshirish", true, None);
+
+        // 5. Active toggle checkbox
         let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, None);
+
+        // 6. Settings and Quit
         let settings_item = MenuItem::new("Sozlamalar (config.toml)", false, None);
         let quit_item = MenuItem::new("Chiqish", true, None);
 
         tray_menu
             .append_items(&[
+                &version_item,
+                &update_info_item,
+                &update_action_item,
+                &check_updates_item,
+                &PredefinedMenuItem::separator(),
                 &active_item,
                 &PredefinedMenuItem::separator(),
                 &settings_item,
@@ -87,6 +113,9 @@ impl TrayController {
             _hotkey_manager: hotkey_manager,
             hotkey,
             active_item,
+            update_info_item,
+            update_action_item,
+            check_updates_item,
             quit_item,
             is_active,
         })
@@ -109,12 +138,40 @@ impl TrayController {
                 let new_state = !self.is_active.load(Ordering::SeqCst);
                 self.update_state(new_state);
                 return Some(TrayCommand::ToggleActive(new_state));
+            } else if event.id == self.check_updates_item.id() {
+                return Some(TrayCommand::CheckUpdates);
+            } else if event.id == self.update_action_item.id() {
+                return Some(TrayCommand::DownloadUpdate);
             } else if event.id == self.quit_item.id() {
                 return Some(TrayCommand::Quit);
             }
         }
 
         None
+    }
+
+    /// Update tray menu when a new version is discovered.
+    pub fn set_update_available(&self, latest_version: &str) {
+        self.update_info_item
+            .set_text(format!("⭐ Yangi versiya: v{}", latest_version));
+        self.update_action_item
+            .set_text(format!("🚀 Yangilashni yuklab olish (v{})", latest_version));
+        self.update_action_item.set_enabled(true);
+    }
+
+    /// Update tray menu when the installed version is already the latest.
+    pub fn set_up_to_date(&self) {
+        self.update_info_item
+            .set_text("✅ Eng so'nggi versiya o'rnatilgan");
+        self.update_action_item.set_text("🚀 Yangilash");
+        self.update_action_item.set_enabled(false);
+    }
+
+    /// Update tray menu while an update check is in progress.
+    pub fn set_checking_updates(&self) {
+        self.update_info_item
+            .set_text("⏳ Yangilanishlar tekshirilmoqda...");
+        self.update_action_item.set_enabled(false);
     }
 
     /// Internal helper to update state, check item, and change icon.

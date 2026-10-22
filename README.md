@@ -91,6 +91,9 @@ cargo run -p harfiy-daemon -- --no-tray
 
 # Holatni tekshirish
 cargo run -p harfiy-daemon -- status
+
+# Yangilanishlarni tekshirish (GitHub Releases orqali)
+cargo run -p harfiy-daemon -- check-updates
 ```
 
 ### Global Hotkey
@@ -118,6 +121,8 @@ exceptions = [
     "mashad",
 ]
 excluded_apps = []
+check_updates = true
+github_repo = "harfiy/harfiy"
 ```
 
 ---

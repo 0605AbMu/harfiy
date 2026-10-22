@@ -18,6 +18,8 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 directories = "5"
 ctrlc = "3.4"
+ureq = { version = "2.10", features = ["json", "tls"] }
+open = "5.4.5"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
