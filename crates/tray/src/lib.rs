@@ -147,6 +147,10 @@ impl TrayController {
         self.update_item
             .set_text(format!("⭐ Yangilash (v{})", latest_version));
         self.update_item.set_enabled(true);
+        let _ = self.tray_icon.set_tooltip(Some(format!(
+            "Harfiy - Yangi versiya mavjud: v{}!",
+            latest_version
+        )));
     }
 
     /// Update tray menu when the installed version is already the latest.
@@ -155,6 +159,7 @@ impl TrayController {
         self.update_item
             .set_text("✅ Eng so'nggi versiya");
         self.update_item.set_enabled(true);
+        let _ = self.tray_icon.set_tooltip(Some("Harfiy - Eng so'nggi versiya o'rnatilgan"));
     }
 
     /// Update tray menu while an update check is in progress.
@@ -162,6 +167,7 @@ impl TrayController {
         self.update_item
             .set_text("⏳ Tekshirilmoqda...");
         self.update_item.set_enabled(false);
+        let _ = self.tray_icon.set_tooltip(Some("Harfiy - Yangilanishlar tekshirilmoqda..."));
     }
 
     /// Internal helper to update state, check item, and change icon.

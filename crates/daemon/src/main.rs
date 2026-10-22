@@ -292,7 +292,15 @@ fn run_daemon(no_tray: bool) {
                         let repo = app_config.github_repo.clone();
                         let tx = tx_update.clone();
                         thread::spawn(move || {
+                            let start = std::time::Instant::now();
                             let res = updater::check_for_updates(&repo);
+
+                            // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1.5 seconds
+                            let elapsed = start.elapsed();
+                            if elapsed < Duration::from_millis(1500) {
+                                thread::sleep(Duration::from_millis(1500) - elapsed);
+                            }
+
                             let _ = tx.send(res);
                         });
                     }
