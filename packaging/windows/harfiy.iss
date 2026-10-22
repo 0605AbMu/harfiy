@@ -33,7 +33,6 @@ UsePreviousTasks=yes
 DefaultDirName={autopf}\Harfiy
 DefaultGroupName=Harfiy
 DisableProgramGroupPage=yes
-LicenseFile=..\..\README.md
 OutputDir={#MyOutputDir}
 OutputBaseFilename=harfiy-v{#MyAppVersion}-windows-x86_64-setup
 SetupIconFile=..\..\assets\icon.ico
