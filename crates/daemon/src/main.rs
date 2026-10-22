@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 //! Harfiy Background Daemon & CLI
 //! Real-time Uzbek Latin orthography conversion engine.
 
@@ -53,6 +55,7 @@ enum Commands {
 }
 
 fn main() {
+    harfiy_platform::attach_parent_console();
     let cli = Cli::parse();
 
     match cli.command {

@@ -26,6 +26,17 @@ use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
 /// ASCII value for "HARF".
 pub const HARFIY_MAGIC_FLAG: usize = 0x48415246;
 
+extern "system" {
+    fn AttachConsole(dw_process_id: u32) -> i32;
+}
+
+/// Attach to the parent console if invoked from a terminal (e.g. for CLI commands).
+pub fn attach_parent_console() {
+    unsafe {
+        AttachConsole(0xFFFFFFFF);
+    }
+}
+
 /// Named Mutex guard for ensuring only one instance of Harfiy runs at a time.
 pub struct SingleInstanceGuard {
     handle: HANDLE,

@@ -64,9 +64,12 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
 pub use self::windows::{
-    acquire_single_instance_lock, pump_messages, show_confirm_dialog, show_info_dialog,
-    SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    acquire_single_instance_lock, attach_parent_console, pump_messages, show_confirm_dialog,
+    show_info_dialog, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
+
+#[cfg(not(windows))]
+pub fn attach_parent_console() {}
 
 #[cfg(not(windows))]
 pub fn show_info_dialog(title: &str, message: &str) {
