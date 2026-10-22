@@ -1,0 +1,12 @@
+[Unit]
+Description=Harfiy - Real-time Uzbek Latin conversion daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/harfiy
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
