@@ -19,7 +19,7 @@ AppVerName=Harfiy {#MyAppVersion}
 AppPublisher=Abdumannon Shamsiyev
 AppPublisherURL=https://www.linkedin.com/in/abdumannon-shamsiyev
 AppSupportURL=https://t.me/Abdumannon_Shamsiyev
-AppUpdatesURL=https://github.com/harfiy
+AppUpdatesURL=https://github.com/0605AbMu/harfiy/releases
 
 ; Automatic upgrade & running process handling
 AppMutex=HarfiySingleInstanceMutex

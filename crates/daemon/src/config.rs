@@ -27,7 +27,7 @@ pub struct AppConfig {
     #[serde(default = "default_check_updates")]
     pub check_updates: bool,
 
-    /// GitHub repository to check for updates (default: "harfiy/harfiy")
+    /// GitHub repository to check for updates (default: "0605AbMu/harfiy")
     #[serde(default = "default_github_repo")]
     pub github_repo: String,
 }
@@ -41,7 +41,7 @@ fn default_check_updates() -> bool {
 }
 
 fn default_github_repo() -> String {
-    "harfiy/harfiy".to_string()
+    "0605AbMu/harfiy".to_string()
 }
 
 fn default_hotkey() -> String {
@@ -112,7 +112,7 @@ impl AppConfig {
         // Save default config
         let default_cfg = AppConfig::default();
         if let Ok(serialized) = toml::to_string_pretty(&default_cfg) {
-            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/harfiy\n\n";
+            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/0605AbMu/harfiy\n\n";
             let full_text = format!("{}{}", header, serialized);
             let _ = fs::write(&path, full_text);
         }

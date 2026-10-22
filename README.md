@@ -122,8 +122,10 @@ exceptions = [
 ]
 excluded_apps = []
 check_updates = true
-github_repo = "harfiy/harfiy"
+github_repo = "0605AbMu/harfiy"
 ```
+
+Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)**
 
 ---
 
