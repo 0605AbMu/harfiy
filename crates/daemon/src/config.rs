@@ -1,0 +1,104 @@
+//! Configuration file handling for Harfiy daemon.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// Enable 'ng' / 'NG' conversion to 'ñ' / 'Ñ' (default: false)
+    #[serde(default = "default_enable_ng")]
+    pub enable_ng: bool,
+
+    /// Global hotkey combination to toggle on/off (default: "Ctrl+Shift+U")
+    #[serde(default = "default_hotkey")]
+    pub hotkey: String,
+
+    /// List of custom exception words where 'sh' is kept separate
+    #[serde(default = "default_exceptions")]
+    pub exceptions: Vec<String>,
+
+    /// Executable names where auto-conversion should be temporarily suspended
+    #[serde(default = "default_excluded_apps")]
+    pub excluded_apps: Vec<String>,
+}
+
+fn default_enable_ng() -> bool {
+    false
+}
+
+fn default_hotkey() -> String {
+    "Ctrl+Shift+U".to_string()
+}
+
+fn default_exceptions() -> Vec<String> {
+    vec![
+        "ishoq".to_string(),
+        "is-hoq".to_string(),
+        "is'hoq".to_string(),
+        "ashob".to_string(),
+        "as-hob".to_string(),
+        "mushaf".to_string(),
+        "mus-haf".to_string(),
+        "ishol".to_string(),
+        "mashad".to_string(),
+    ]
+}
+
+fn default_excluded_apps() -> Vec<String> {
+    vec![]
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            enable_ng: default_enable_ng(),
+            hotkey: default_hotkey(),
+            exceptions: default_exceptions(),
+            excluded_apps: default_excluded_apps(),
+        }
+    }
+}
+
+impl AppConfig {
+    /// Determine the path to config.toml:
+    /// 1. Local `./config.toml` if it exists.
+    /// 2. User project config directory (`%APPDATA%\harfiy\config.toml`).
+    pub fn resolve_path() -> PathBuf {
+        let local = Path::new("config.toml");
+        if local.exists() {
+            return local.to_path_buf();
+        }
+
+        if let Some(dirs) = ProjectDirs::from("uz", "Harfiy", "harfiy") {
+            let config_dir = dirs.config_dir();
+            let _ = fs::create_dir_all(config_dir);
+            return config_dir.join("config.toml");
+        }
+
+        PathBuf::from("config.toml")
+    }
+
+    /// Load config from disk, or create and save defaults if it does not exist.
+    pub fn load_or_create() -> (Self, PathBuf) {
+        let path = Self::resolve_path();
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(cfg) = toml::from_str::<AppConfig>(&content) {
+                    return (cfg, path);
+                }
+            }
+        }
+
+        // Save default config
+        let default_cfg = AppConfig::default();
+        if let Ok(serialized) = toml::to_string_pretty(&default_cfg) {
+            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/harfiy\n\n";
+            let full_text = format!("{}{}", header, serialized);
+            let _ = fs::write(&path, full_text);
+        }
+
+        (default_cfg, path)
+    }
+}
