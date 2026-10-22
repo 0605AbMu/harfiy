@@ -22,9 +22,7 @@ AppSupportURL=https://t.me/Abdumannon_Shamsiyev
 AppUpdatesURL=https://abdumannon-shamsiyev.uz/harfiy/updates/
 
 ; Automatic upgrade & running process handling
-AppMutex=HarfiySingleInstanceMutex
-CloseApplications=force
-CloseApplicationsFilter=*harfiy*
+CloseApplications=no
 RestartApplications=no
 UsePreviousAppDir=yes
 UsePreviousGroup=yes
@@ -67,21 +65,29 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\harfiy.exe"; Description: "Harfiy dasturini ishga tushirish"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+procedure StopRunningHarfiy();
 var
   ResultCode: Integer;
 begin
-  // Gracefully stop running Harfiy before copying files to guarantee error-free in-place upgrades
+  // Terminate any running Harfiy process immediately and silently
   Exec('taskkill.exe', '/F /IM harfiy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(300);
+  Sleep(500);
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  StopRunningHarfiy();
+  Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopRunningHarfiy();
   Result := '';
 end;
 
 function InitializeUninstall(): Boolean;
-var
-  ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM harfiy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(300);
+  StopRunningHarfiy();
   Result := True;
 end;

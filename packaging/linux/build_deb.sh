@@ -52,22 +52,34 @@ Description: Real-time Uzbek Latin orthography conversion engine
  into modern unified graphemes in real-time at system level.
 EOF
 
-# 6. DEBIAN/prerm (executed before upgrade/removal to stop running instances cleanly)
+# 6. DEBIAN/preinst (executed before unpacking files to terminate running instances)
+cat <<'EOF' > "${PKG_DIR}/DEBIAN/preinst"
+#!/bin/sh
+set -e
+# Forcefully kill any running Harfiy process so binary file can be cleanly replaced
+pkill -9 -x harfiy 2>/dev/null || true
+pkill -9 -f "/usr/bin/harfiy" 2>/dev/null || true
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --global stop harfiy.service 2>/dev/null || true
+fi
+exit 0
+EOF
+chmod 755 "${PKG_DIR}/DEBIAN/preinst"
+
+# 7. DEBIAN/prerm (executed before upgrade/removal to stop running instances cleanly)
 cat <<'EOF' > "${PKG_DIR}/DEBIAN/prerm"
 #!/bin/sh
 set -e
-if [ "$1" = "upgrade" ] || [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
-    # Stop running process gracefully
-    pkill -TERM -x harfiy || true
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl --global stop harfiy.service 2>/dev/null || true
-    fi
+pkill -9 -x harfiy 2>/dev/null || true
+pkill -9 -f "/usr/bin/harfiy" 2>/dev/null || true
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --global stop harfiy.service 2>/dev/null || true
 fi
 exit 0
 EOF
 chmod 755 "${PKG_DIR}/DEBIAN/prerm"
 
-# 7. DEBIAN/postinst (executed after upgrade/install to update caches)
+# 8. DEBIAN/postinst (executed after upgrade/install to update caches)
 cat <<'EOF' > "${PKG_DIR}/DEBIAN/postinst"
 #!/bin/sh
 set -e
@@ -86,7 +98,7 @@ exit 0
 EOF
 chmod 755 "${PKG_DIR}/DEBIAN/postinst"
 
-# 8. DEBIAN/postrm (executed after package removal or purge)
+# 9. DEBIAN/postrm (executed after package removal or purge)
 cat <<'EOF' > "${PKG_DIR}/DEBIAN/postrm"
 #!/bin/sh
 set -e
@@ -105,7 +117,7 @@ exit 0
 EOF
 chmod 755 "${PKG_DIR}/DEBIAN/postrm"
 
-# 9. Build Debian package
+# 10. Build Debian package
 mkdir -p "${OUT_DIR}"
 dpkg-deb --build --root-owner-group "${PKG_DIR}" "${OUT_DIR}/harfiy_${VERSION}_${ARCH}.deb"
 rm -rf "${PKG_DIR}"
