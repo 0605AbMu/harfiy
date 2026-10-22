@@ -187,16 +187,14 @@ jobs:
   # ===========================================================================
   build-macos:
     name: macOS (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-13
             arch: x86_64
           - target: aarch64-apple-darwin
-            os: macos-latest
             arch: arm64
     steps:
       - name: Checkout repository
