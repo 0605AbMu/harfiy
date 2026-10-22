@@ -1,0 +1,219 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag name (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-package:
+    name: Build & Package (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            bin_name: harfiy.exe
+          # Ubuntu / Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            bin_name: harfiy
+          # macOS Intel
+          - target: x86_64-apple-darwin
+            os: macos-13
+            bin_name: harfiy
+          # macOS Apple Silicon
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            bin_name: harfiy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          cache: true
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} -p harfiy-daemon
+
+      # -----------------------------------------------------------------------
+      # WINDOWS: Build Inno Setup .exe installer + Portable .zip
+      # -----------------------------------------------------------------------
+      - name: Build Windows Installers (.exe & .zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.vars.outputs.version }}"
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $target = "${{ matrix.target }}"
+          $distDir = "dist"
+          New-Item -ItemType Directory -Force -Path $distDir
+          
+          # 1. Build Inno Setup .exe installer
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+              Write-Host "Compiling Inno Setup installer..."
+              & $iscc "/DMyAppVersion=$ver" "/DMyBinaryDir=target\$target\release" "/DMyOutputDir=$distDir" "packaging\windows\harfiy.iss"
+          } else {
+              Write-Warning "Inno Setup not found at $iscc"
+          }
+          
+          # 2. Build portable .zip
+          $pkgName = "harfiy-$tag-$target"
+          $pkgDir = New-Item -ItemType Directory -Path $pkgName
+          Copy-Item "target/$target/release/harfiy.exe" -Destination $pkgDir/
+          Copy-Item "README.md" -Destination $pkgDir/
+          if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination $pkgDir/ }
+          Compress-Archive -Path "$pkgName/*" -DestinationPath "$distDir/$pkgName.zip"
+          Remove-Item -Recurse -Force $pkgName
+
+      # -----------------------------------------------------------------------
+      # LINUX: Build Debian/Ubuntu .deb installer + Portable .tar.gz
+      # -----------------------------------------------------------------------
+      - name: Build Linux Installers (.deb & .tar.gz)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          TAG="${{ steps.vars.outputs.tag }}"
+          TARGET="${{ matrix.target }}"
+          DIST_DIR="dist"
+          mkdir -p "$DIST_DIR"
+          
+          # 1. Build .deb package
+          chmod +x packaging/linux/build_deb.sh
+          ./packaging/linux/build_deb.sh "$VERSION" "target/${TARGET}/release" "$DIST_DIR"
+          
+          # 2. Build portable .tar.gz
+          PKG_NAME="harfiy-${TAG}-${TARGET}"
+          mkdir -p "${PKG_NAME}"
+          cp "target/${TARGET}/release/harfiy" "${PKG_NAME}/"
+          cp "README.md" "${PKG_NAME}/"
+          if [ -d "assets" ]; then cp -r "assets" "${PKG_NAME}/"; fi
+          tar -czvf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${PKG_NAME}" .
+          rm -rf "${PKG_NAME}"
+
+      # -----------------------------------------------------------------------
+      # MACOS: Build Apple .dmg installer + Portable .tar.gz
+      # -----------------------------------------------------------------------
+      - name: Build macOS Installers (.dmg & .tar.gz)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          TAG="${{ steps.vars.outputs.tag }}"
+          TARGET="${{ matrix.target }}"
+          DIST_DIR="dist"
+          mkdir -p "$DIST_DIR"
+          
+          ARCH="x86_64"
+          if [ "$TARGET" = "aarch64-apple-darwin" ]; then ARCH="arm64"; fi
+          
+          # 1. Build .dmg installer
+          chmod +x packaging/macos/build_dmg.sh
+          ./packaging/macos/build_dmg.sh "$VERSION" "target/${TARGET}/release" "$DIST_DIR" "$ARCH"
+          
+          # 2. Build portable .tar.gz
+          PKG_NAME="harfiy-${TAG}-${TARGET}"
+          mkdir -p "${PKG_NAME}"
+          cp "target/${TARGET}/release/harfiy" "${PKG_NAME}/"
+          cp "README.md" "${PKG_NAME}/"
+          if [ -d "assets" ]; then cp -r "assets" "${PKG_NAME}/"; fi
+          tar -czvf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${PKG_NAME}" .
+          rm -rf "${PKG_NAME}"
+
+      - name: Compute SHA256 checksums
+        shell: bash
+        run: |
+          cd dist
+          for f in *; do
+            if [ -f "$f" ]; then
+              if command -v sha256sum >/dev/null 2>&1; then
+                sha256sum "$f" > "${f}.sha256"
+              else
+                shasum -a 256 "$f" > "${f}.sha256"
+              fi
+            fi
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish Release to GitHub
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-installers
+
+      - name: Assemble final release files and master checksums
+        run: |
+          mkdir -p release-assets
+          find downloaded-installers -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
+          
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cd ..
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: "Harfiy ${{ steps.vars.outputs.tag }}"
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

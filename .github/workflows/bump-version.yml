@@ -1,0 +1,54 @@
+name: Bump Version & Trigger Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New SemVer version (e.g. 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-tag:
+    name: Bump Version and Push Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update Cargo.toml versions
+        run: |
+          NEW_VER="${{ inputs.version }}"
+          # Strip leading 'v' if user typed e.g. v0.2.0
+          NEW_VER="${NEW_VER#v}"
+          echo "Updating workspace version to: ${NEW_VER}"
+          
+          # Update version in crates/*/Cargo.toml
+          find crates -name "Cargo.toml" -exec sed -i "s/^version = \".*\"/version = \"${NEW_VER}\"/" {} +
+          
+          # Verify changes
+          git diff
+
+      - name: Commit, Tag, and Push
+        run: |
+          NEW_VER="${{ inputs.version }}"
+          NEW_VER="${NEW_VER#v}"
+          TAG="v${NEW_VER}"
+          
+          git add crates/*/Cargo.toml
+          git commit -m "chore(release): bump version to ${TAG}"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          
+          git push origin HEAD
+          git push origin "${TAG}"
