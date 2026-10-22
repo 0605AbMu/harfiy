@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag name (e.g. v0.1.0)"
+        description: "Release tag name (e.g. 0.1.0 or v0.1.0)"
         required: true
         type: string
 
@@ -19,30 +19,90 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-package:
-    name: Build & Package (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            bin_name: harfiy.exe
-          # Ubuntu / Linux
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            bin_name: harfiy
-          # macOS Intel
-          - target: x86_64-apple-darwin
-            os: macos-13
-            bin_name: harfiy
-          # macOS Apple Silicon
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            bin_name: harfiy
+  # ===========================================================================
+  # WINDOWS: x86_64 (.exe installer + .zip)
+  # ===========================================================================
+  build-windows:
+    name: Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Sync Cargo.toml version with Git tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          echo "Syncing all Cargo.toml packages to Git tag version: ${VERSION}"
+          if [ -n "$VERSION" ]; then
+            for f in crates/*/Cargo.toml; do
+              sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" "$f"
+              rm -f "${f}.bak"
+            done
+          fi
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+          cache: true
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc -p harfiy-daemon
+
+      - name: Build Windows Installers (.exe & .zip)
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.vars.outputs.version }}"
+          $tag = "${{ steps.vars.outputs.tag }}"
+          $target = "x86_64-pc-windows-msvc"
+          $distDir = "dist"
+          New-Item -ItemType Directory -Force -Path $distDir
+          
+          # 1. Build Inno Setup .exe installer
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+              Write-Host "Compiling Inno Setup installer..."
+              & $iscc "/DMyAppVersion=$ver" "/DMyBinaryDir=target\$target\release" "/DMyOutputDir=$distDir" "packaging\windows\harfiy.iss"
+          } else {
+              Write-Warning "Inno Setup not found at $iscc"
+          }
+          
+          # 2. Build portable .zip
+          $pkgName = "harfiy-$tag-$target"
+          $pkgDir = New-Item -ItemType Directory -Path $pkgName
+          Copy-Item "target/$target/release/harfiy.exe" -Destination $pkgDir/
+          Copy-Item "README.md" -Destination $pkgDir/
+          if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination $pkgDir/ }
+          Compress-Archive -Path "$pkgName/*" -DestinationPath "$distDir/$pkgName.zip"
+          Remove-Item -Recurse -Force $pkgName
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: dist/*
+          if-no-files-found: error
+
+  # ===========================================================================
+  # LINUX: Ubuntu x86_64 (.deb package + .tar.gz)
+  # ===========================================================================
+  build-linux:
+    name: Linux (Ubuntu x86_64)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,7 +132,6 @@ jobs:
           fi
 
       - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libglib2.0-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libx11-dev
@@ -81,53 +140,18 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.target }}
+          target: x86_64-unknown-linux-gnu
           cache: true
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p harfiy-daemon
+        run: cargo build --release --target x86_64-unknown-linux-gnu -p harfiy-daemon
 
-      # -----------------------------------------------------------------------
-      # WINDOWS: Build Inno Setup .exe installer + Portable .zip
-      # -----------------------------------------------------------------------
-      - name: Build Windows Installers (.exe & .zip)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.vars.outputs.version }}"
-          $tag = "${{ steps.vars.outputs.tag }}"
-          $target = "${{ matrix.target }}"
-          $distDir = "dist"
-          New-Item -ItemType Directory -Force -Path $distDir
-          
-          # 1. Build Inno Setup .exe installer
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (Test-Path $iscc) {
-              Write-Host "Compiling Inno Setup installer..."
-              & $iscc "/DMyAppVersion=$ver" "/DMyBinaryDir=target\$target\release" "/DMyOutputDir=$distDir" "packaging\windows\harfiy.iss"
-          } else {
-              Write-Warning "Inno Setup not found at $iscc"
-          }
-          
-          # 2. Build portable .zip
-          $pkgName = "harfiy-$tag-$target"
-          $pkgDir = New-Item -ItemType Directory -Path $pkgName
-          Copy-Item "target/$target/release/harfiy.exe" -Destination $pkgDir/
-          Copy-Item "README.md" -Destination $pkgDir/
-          if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination $pkgDir/ }
-          Compress-Archive -Path "$pkgName/*" -DestinationPath "$distDir/$pkgName.zip"
-          Remove-Item -Recurse -Force $pkgName
-
-      # -----------------------------------------------------------------------
-      # LINUX: Build Debian/Ubuntu .deb installer + Portable .tar.gz
-      # -----------------------------------------------------------------------
       - name: Build Linux Installers (.deb & .tar.gz)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           VERSION="${{ steps.vars.outputs.version }}"
           TAG="${{ steps.vars.outputs.tag }}"
-          TARGET="${{ matrix.target }}"
+          TARGET="x86_64-unknown-linux-gnu"
           DIST_DIR="dist"
           mkdir -p "$DIST_DIR"
           
@@ -144,11 +168,68 @@ jobs:
           tar -czvf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${PKG_NAME}" .
           rm -rf "${PKG_NAME}"
 
-      # -----------------------------------------------------------------------
-      # MACOS: Build Apple .dmg installer + Portable .tar.gz
-      # -----------------------------------------------------------------------
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux
+          path: dist/*
+          if-no-files-found: error
+
+  # ===========================================================================
+  # MACOS: Intel & Apple Silicon (.dmg installer + .tar.gz)
+  # ===========================================================================
+  build-macos:
+    name: macOS (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+            arch: x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            arch: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Sync Cargo.toml version with Git tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          echo "Syncing all Cargo.toml packages to Git tag version: ${VERSION}"
+          if [ -n "$VERSION" ]; then
+            for f in crates/*/Cargo.toml; do
+              sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" "$f"
+              rm -f "${f}.bak"
+            done
+          fi
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          cache: true
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} -p harfiy-daemon
+
       - name: Build macOS Installers (.dmg & .tar.gz)
-        if: runner.os == 'macOS'
         shell: bash
         run: |
           VERSION="${{ steps.vars.outputs.version }}"
@@ -157,12 +238,9 @@ jobs:
           DIST_DIR="dist"
           mkdir -p "$DIST_DIR"
           
-          ARCH="x86_64"
-          if [ "$TARGET" = "aarch64-apple-darwin" ]; then ARCH="arm64"; fi
-          
           # 1. Build .dmg installer
           chmod +x packaging/macos/build_dmg.sh
-          ./packaging/macos/build_dmg.sh "$VERSION" "target/${TARGET}/release" "$DIST_DIR" "$ARCH"
+          ./packaging/macos/build_dmg.sh "$VERSION" "target/${TARGET}/release" "$DIST_DIR" "${{ matrix.arch }}"
           
           # 2. Build portable .tar.gz
           PKG_NAME="harfiy-${TAG}-${TARGET}"
@@ -173,30 +251,19 @@ jobs:
           tar -czvf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${PKG_NAME}" .
           rm -rf "${PKG_NAME}"
 
-      - name: Compute SHA256 checksums
-        shell: bash
-        run: |
-          cd dist
-          for f in *; do
-            if [ -f "$f" ]; then
-              if command -v sha256sum >/dev/null 2>&1; then
-                sha256sum "$f" > "${f}.sha256"
-              else
-                shasum -a 256 "$f" > "${f}.sha256"
-              fi
-            fi
-          done
-
-      - name: Upload artifact
+      - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ matrix.target }}
+          name: installer-macos-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
+  # ===========================================================================
+  # PUBLISH RELEASE: Collect all artifacts & publish to GitHub Releases
+  # ===========================================================================
   publish-release:
     name: Publish Release to GitHub
-    needs: build-and-package
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
