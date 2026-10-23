@@ -21,6 +21,11 @@ const MENU_SUPPORT_16: &[u8] = include_bytes!("../../../assets/menu_support_16.r
 const MENU_CHECK_16: &[u8] = include_bytes!("../../../assets/menu_check_16.rgba");
 const MENU_STAR_16: &[u8] = include_bytes!("../../../assets/menu_star_16.rgba");
 const MENU_SYNC_16: &[u8] = include_bytes!("../../../assets/menu_sync_16.rgba");
+const MENU_FOLDER_16: &[u8] = include_bytes!("../../../assets/menu_folder_16.rgba");
+const MENU_REMOVE_16: &[u8] = include_bytes!("../../../assets/menu_remove_16.rgba");
+const MENU_ADD_16: &[u8] = include_bytes!("../../../assets/menu_add_16.rgba");
+const MENU_TRASH_16: &[u8] = include_bytes!("../../../assets/menu_trash_16.rgba");
+const MENU_INFO_16: &[u8] = include_bytes!("../../../assets/menu_info_16.rgba");
 
 fn make_menu_icon(rgba: &[u8]) -> Option<tray_icon::menu::Icon> {
     tray_icon::menu::Icon::from_rgba(rgba.to_vec(), 16, 16).ok()
@@ -48,6 +53,7 @@ pub enum TrayCommand {
     PickExcludedAppExplorer,
     AddExcludedApp(String),
     RemoveExcludedApp(String),
+    ClearAllExcludedApps,
     OpenBlog,
     OpenSupport,
 }
@@ -83,11 +89,12 @@ pub fn populate_excluded_submenu(
 ) {
     clear_submenu(submenu);
 
-    // 1. Pick via Native Windows Explorer
-    let pick_item = MenuItem::with_id(
+    // 1. Pick via Native Windows Explorer with folder icon
+    let pick_item = IconMenuItem::with_id(
         "pick_explorer",
         "Fayldan tanlash (.exe)...",
         true,
+        make_menu_icon(MENU_FOLDER_16),
         None,
     );
     let _ = submenu.append(&pick_item);
@@ -98,10 +105,11 @@ pub fn populate_excluded_submenu(
     for app in running_apps {
         let app_lower = app.to_lowercase();
         if !excluded_apps.iter().any(|e| e.to_lowercase() == app_lower) {
-            let item = MenuItem::with_id(
+            let item = IconMenuItem::with_id(
                 format!("add_running:{}", app_lower),
                 app,
                 true,
+                make_menu_icon(MENU_ADD_16),
                 None,
             );
             let _ = running_sub.append(&item);
@@ -109,7 +117,12 @@ pub fn populate_excluded_submenu(
         }
     }
     if !added_any {
-        let empty_item = MenuItem::new("(Boshqa dastur topilmadi)", false, None);
+        let empty_item = IconMenuItem::new(
+            "(Boshqa dastur topilmadi)",
+            false,
+            make_menu_icon(MENU_INFO_16),
+            None,
+        );
         let _ = running_sub.append(&empty_item);
     }
     let _ = submenu.append(&running_sub);
@@ -119,17 +132,36 @@ pub fn populate_excluded_submenu(
 
     // 4. Current Excluded Apps list
     if excluded_apps.is_empty() {
-        let empty_item = MenuItem::new("Istisnolar yo'q (barcha joyda faol)", false, None);
+        let empty_item = IconMenuItem::new(
+            "Istisnolar yo'q (har joyda faol)",
+            false,
+            make_menu_icon(MENU_INFO_16),
+            None,
+        );
         let _ = submenu.append(&empty_item);
     } else {
         for app in excluded_apps {
-            let item = MenuItem::with_id(
+            let item = IconMenuItem::with_id(
                 format!("remove_excluded:{}", app.to_lowercase()),
-                format!("{} (Olib tashlash)", app),
+                app,
                 true,
+                make_menu_icon(MENU_REMOVE_16),
                 None,
             );
             let _ = submenu.append(&item);
+        }
+
+        // If there are 2 or more exclusions, show "Barcha istisnolarni tozalash"
+        if excluded_apps.len() >= 2 {
+            let _ = submenu.append(&PredefinedMenuItem::separator());
+            let clear_all_item = IconMenuItem::with_id(
+                "clear_all_excluded",
+                "Barcha istisnolarni tozalash",
+                true,
+                make_menu_icon(MENU_TRASH_16),
+                None,
+            );
+            let _ = submenu.append(&clear_all_item);
         }
     }
 }
@@ -332,6 +364,8 @@ impl TrayController {
                 let id_str = event.id.as_ref();
                 if id_str == "pick_explorer" {
                     return Some(TrayCommand::PickExcludedAppExplorer);
+                } else if id_str == "clear_all_excluded" {
+                    return Some(TrayCommand::ClearAllExcludedApps);
                 } else if let Some(app) = id_str.strip_prefix("remove_excluded:") {
                     return Some(TrayCommand::RemoveExcludedApp(app.to_string()));
                 } else if let Some(app) = id_str.strip_prefix("add_running:") {

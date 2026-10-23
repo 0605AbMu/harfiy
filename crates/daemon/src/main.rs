@@ -472,6 +472,15 @@ fn run_daemon(no_tray: bool) {
                             println!("Istisno dasturlardan olib tashlandi: {}", app_lower);
                         }
                     }
+                    TrayCommand::ClearAllExcludedApps => {
+                        app_config.excluded_apps.clear();
+                        let _ = app_config.save();
+                        harfiy_platform::set_excluded_apps(&[]);
+                        running_apps = harfiy_platform::scan_running_apps();
+                        tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
+                        harfiy_platform::show_custom_hud("Barcha istisnolar tozalandi", true);
+                        println!("Barcha istisno dasturlar tozalandi.");
+                    }
                     TrayCommand::OpenBlog => {
                         println!("Telegram blog ochilmoqda: tg://resolve?domain=abdumannon_notes (@abdumannon_notes)");
                         open_telegram("abdumannon_notes");
