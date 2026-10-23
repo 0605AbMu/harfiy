@@ -162,6 +162,17 @@ impl HarfiyEngine {
         self.config.enabled
     }
 
+    /// Update 'ng' -> 'ñ' rule status dynamically.
+    pub fn set_enable_ng(&mut self, enable_ng: bool) {
+        self.config.enable_ng = enable_ng;
+        self.reset();
+    }
+
+    /// Check if 'ng' rule is enabled.
+    pub fn is_enable_ng(&self) -> bool {
+        self.config.enable_ng
+    }
+
     /// Reset internal state and character history back to IDLE.
     pub fn reset(&mut self) {
         self.state = FsmState::Idle;
@@ -633,6 +644,29 @@ mod tests {
             KeyAction::Transform {
                 backspaces_count: 1,
                 replacement: "ş",
+            }
+        );
+    }
+
+    #[test]
+    fn test_dynamic_enable_ng() {
+        let mut engine = HarfiyEngine::default();
+        assert!(!engine.is_enable_ng());
+
+        // Type 'n', 'g' without ng enabled -> pass through
+        assert_eq!(engine.process(InputEvent::Char('n')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('g')), KeyAction::PassThrough);
+
+        // Dynamically enable 'ng'
+        engine.set_enable_ng(true);
+        assert!(engine.is_enable_ng());
+
+        assert_eq!(engine.process(InputEvent::Char('n')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('g')),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ñ",
             }
         );
     }

@@ -13,6 +13,14 @@ use windows::Win32::Graphics::Gdi::{
     EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn,
     DT_CENTER, DT_SINGLELINE, DT_VCENTER, HBRUSH, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
 };
+use windows::Win32::System::DataExchange::{
+    CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
+};
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Registry::{
+    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY,
+    HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_SZ,
+};
 use windows::Win32::System::Threading::{
     CreateMutexW, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
     PROCESS_QUERY_LIMITED_INFORMATION,
@@ -29,12 +37,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows,
-    GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowTextLengthW,
+    GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowRect, GetWindowTextLengthW,
     GetWindowThreadProcessId, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
     PostQuitMessage, PostThreadMessageW, RegisterClassW, SetLayeredWindowAttributes, SetTimer,
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES,
     KBDLLHOOKSTRUCT, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG,
-    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP, WM_DESTROY,
+    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP, WM_DESTROY,
     WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
@@ -480,6 +488,306 @@ pub fn pick_executable_dialog() -> Option<String> {
     None
 }
 
+const AUTOSTART_SUBKEY: windows::core::PCWSTR = windows::core::w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+const AUTOSTART_NAME: windows::core::PCWSTR = windows::core::w!("Harfiy");
+
+/// Check if Harfiy is configured to run on Windows startup in Registry.
+pub fn is_autostart_enabled() -> bool {
+    unsafe {
+        let mut hkey = HKEY::default();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, 0, KEY_READ, &mut hkey).is_ok() {
+            let mut buf_len = 0u32;
+            let res = RegQueryValueExW(
+                hkey,
+                AUTOSTART_NAME,
+                None,
+                None,
+                None,
+                Some(&mut buf_len),
+            );
+            let _ = RegCloseKey(hkey);
+            res.is_ok() && buf_len > 0
+        } else {
+            false
+        }
+    }
+}
+
+/// Enable or disable running Harfiy on Windows startup via Registry.
+pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
+    unsafe {
+        let mut hkey = HKEY::default();
+        let open_res = RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            AUTOSTART_SUBKEY,
+            0,
+            KEY_WRITE | KEY_READ,
+            &mut hkey,
+        );
+        if !open_res.is_ok() {
+            return Err(PlatformError::HookInstallationFailed(format!(
+                "Failed to open registry key: {:?}",
+                open_res
+            )));
+        }
+
+        if enabled {
+            let exe_path = std::env::current_exe()
+                .map_err(|e| PlatformError::HookInstallationFailed(e.to_string()))?;
+            let cmd = format!("\"{}\" start", exe_path.display());
+            let wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
+            let slice = std::slice::from_raw_parts(
+                wide.as_ptr() as *const u8,
+                wide.len() * 2,
+            );
+            let res = RegSetValueExW(
+                hkey,
+                AUTOSTART_NAME,
+                0,
+                REG_SZ,
+                Some(slice),
+            );
+            let _ = RegCloseKey(hkey);
+            if !res.is_ok() {
+                return Err(PlatformError::HookInstallationFailed(format!(
+                    "Failed to set registry value: {:?}",
+                    res
+                )));
+            }
+        } else {
+            let _ = RegDeleteValueW(hkey, AUTOSTART_NAME);
+            let _ = RegCloseKey(hkey);
+        }
+        Ok(())
+    }
+}
+
+const CF_UNICODETEXT: u32 = 13;
+
+/// Read unicode text currently on Windows clipboard.
+pub fn get_clipboard_text() -> Option<String> {
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return None;
+        }
+        let handle = match GetClipboardData(CF_UNICODETEXT) {
+            Ok(h) => h,
+            Err(_) => {
+                let _ = CloseClipboard();
+                return None;
+            }
+        };
+        let ptr = GlobalLock(windows::Win32::Foundation::HGLOBAL(handle.0));
+        if ptr.is_null() {
+            let _ = CloseClipboard();
+            return None;
+        }
+
+        let slice = std::slice::from_raw_parts(ptr as *const u16, 1_000_000);
+        let len = slice.iter().position(|&c| c == 0).unwrap_or(0);
+        let text = String::from_utf16_lossy(&slice[..len]);
+
+        let _ = GlobalUnlock(windows::Win32::Foundation::HGLOBAL(handle.0));
+        let _ = CloseClipboard();
+        Some(text)
+    }
+}
+
+/// Write unicode text to Windows clipboard.
+pub fn set_clipboard_text(text: &str) -> bool {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes_count = wide.len() * 2;
+
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return false;
+        }
+        let _ = EmptyClipboard();
+
+        let hmem = match GlobalAlloc(GMEM_MOVEABLE, bytes_count) {
+            Ok(h) => h,
+            Err(_) => {
+                let _ = CloseClipboard();
+                return false;
+            }
+        };
+
+        let ptr = GlobalLock(hmem);
+        if ptr.is_null() {
+            let _ = CloseClipboard();
+            return false;
+        }
+
+        std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, ptr as *mut u8, bytes_count);
+        let _ = GlobalUnlock(hmem);
+
+        let res = SetClipboardData(CF_UNICODETEXT, HANDLE(hmem.0));
+        let _ = CloseClipboard();
+        res.is_ok()
+    }
+}
+
+/// Emit synthetic Ctrl+C key combination to copy selected text.
+pub fn emit_copy() {
+    let inputs = [
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_CONTROL,
+                    wScan: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0x43), // 'C'
+                    wScan: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0x43),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_CONTROL,
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+    ];
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+/// Emit synthetic Ctrl+V key combination to paste text.
+pub fn emit_paste() {
+    let inputs = [
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_CONTROL,
+                    wScan: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0x56), // 'V'
+                    wScan: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0x56),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_CONTROL,
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: HARFIY_MAGIC_FLAG,
+                },
+            },
+        },
+    ];
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+static GAME_MODE_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Enable or disable automatic game mode (fullscreen game detection).
+pub fn set_game_mode(enabled: bool) {
+    GAME_MODE_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+/// Query if game mode is currently enabled.
+pub fn is_game_mode() -> bool {
+    GAME_MODE_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Check if the currently focused window is a full-screen application / game.
+pub fn is_foreground_fullscreen() -> bool {
+    if !is_game_mode() {
+        return false;
+    }
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            return false;
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(fg, &mut rect).is_err() {
+            return false;
+        }
+
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let screen_h = GetSystemMetrics(SM_CYSCREEN);
+
+        if rect.left <= 0 && rect.top <= 0 && rect.right >= screen_w && rect.bottom >= screen_h {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(fg, Some(&mut pid));
+            if pid != 0 && pid != std::process::id() {
+                if let Some(name) = get_process_name_by_pid(pid) {
+                    let name_lower = name.to_lowercase();
+                    if name_lower != "explorer.exe" && name_lower != "harfiy.exe" {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
 /// Global state held during the active keyboard hook.
 struct HookState {
     handler: Box<dyn FnMut(InputEvent) -> KeyAction + Send>,
@@ -812,6 +1120,11 @@ unsafe extern "system" fn low_level_keyboard_proc(
 
     // Do not interfere if the active foreground window belongs to an excluded application
     if is_current_app_excluded() {
+        return CallNextHookEx(None, n_code, w_param, l_param);
+    }
+
+    // Do not interfere if Game Mode is active and foreground window is a fullscreen application / game
+    if is_foreground_fullscreen() {
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
 

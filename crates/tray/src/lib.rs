@@ -26,9 +26,29 @@ const MENU_REMOVE_16: &[u8] = include_bytes!("../../../assets/menu_remove_16.rgb
 const MENU_ADD_16: &[u8] = include_bytes!("../../../assets/menu_add_16.rgba");
 const MENU_TRASH_16: &[u8] = include_bytes!("../../../assets/menu_trash_16.rgba");
 const MENU_INFO_16: &[u8] = include_bytes!("../../../assets/menu_info_16.rgba");
+const MENU_STATS_16: &[u8] = include_bytes!("../../../assets/menu_stats_16.rgba");
+const MENU_MAGIC_16: &[u8] = include_bytes!("../../../assets/menu_magic_16.rgba");
 
 fn make_menu_icon(rgba: &[u8]) -> Option<tray_icon::menu::Icon> {
     tray_icon::menu::Icon::from_rgba(rgba.to_vec(), 16, 16).ok()
+}
+
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    for (i, &ch) in chars.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(' ');
+        }
+        result.push(ch);
+    }
+    result
+}
+
+fn calculate_time_saved(conversions: u64) -> u64 {
+    ((conversions as f64 * 0.5) / 60.0).ceil() as u64
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +67,10 @@ pub enum TrayError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayCommand {
     ToggleActive(bool),
+    QuickConvertText,
+    ToggleNg(bool),
+    ToggleAutostart(bool),
+    ToggleGameMode(bool),
     CheckUpdates,
     DownloadUpdate,
     Quit,
@@ -54,6 +78,7 @@ pub enum TrayCommand {
     AddExcludedApp(String),
     RemoveExcludedApp(String),
     ClearAllExcludedApps,
+    ClearStats,
     OpenBlog,
     OpenSupport,
 }
@@ -171,16 +196,27 @@ pub struct TrayController {
     tray_icon: TrayIcon,
     _hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
+    convert_hotkey: Option<HotKey>,
     active_item: CheckMenuItem,
+    convert_item: IconMenuItem,
+    ng_item: CheckMenuItem,
+    autostart_item: CheckMenuItem,
+    game_mode_item: CheckMenuItem,
     excluded_submenu: Submenu,
+    stats_count_item: IconMenuItem,
+    stats_time_item: MenuItem,
     _version_item: MenuItem,
     update_item: IconMenuItem,
     blog_item: IconMenuItem,
     support_item: IconMenuItem,
     quit_item: MenuItem,
     is_active: Arc<AtomicBool>,
+    enable_ng: Arc<AtomicBool>,
+    autostart: Arc<AtomicBool>,
+    game_mode: Arc<AtomicBool>,
     has_update: Arc<AtomicBool>,
     last_hotkey_press: Arc<Mutex<Instant>>,
+    last_convert_hotkey_press: Arc<Mutex<Instant>>,
 }
 
 impl TrayController {
@@ -189,16 +225,27 @@ impl TrayController {
         initial_active: bool,
         current_version: &str,
         hotkey_str: &str,
+        convert_hotkey_str: &str,
+        initial_ng: bool,
+        initial_autostart: bool,
+        initial_game_mode: bool,
+        total_conversions: u64,
         excluded_apps: &[String],
         running_apps: &[String],
     ) -> Result<Self, TrayError> {
         let is_active = Arc::new(AtomicBool::new(initial_active));
+        let enable_ng = Arc::new(AtomicBool::new(initial_ng));
+        let autostart = Arc::new(AtomicBool::new(initial_autostart));
+        let game_mode = Arc::new(AtomicBool::new(initial_game_mode));
         let has_update = Arc::new(AtomicBool::new(false));
         let last_hotkey_press = Arc::new(Mutex::new(
             Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
         ));
+        let last_convert_hotkey_press = Arc::new(Mutex::new(
+            Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+        ));
 
-        // Parse accelerator for menu item hint
+        // Parse accelerator for menu item hints
         let accelerator: Option<Accelerator> = hotkey_str
             .parse()
             .ok()
@@ -209,20 +256,72 @@ impl TrayController {
                 ))
             });
 
+        let convert_accelerator: Option<Accelerator> = convert_hotkey_str
+            .parse()
+            .ok()
+            .or_else(|| {
+                Some(Accelerator::new(
+                    Some(tray_icon::menu::accelerator::Modifiers::CONTROL | tray_icon::menu::accelerator::Modifiers::ALT),
+                    tray_icon::menu::accelerator::Code::KeyU,
+                ))
+            });
+
         // Create simplified, elegant tray menu items
         let tray_menu = Menu::new();
 
         // 1. Active toggle checkbox with shortcut hint
         let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, accelerator);
 
-        // 2. Excluded apps submenu (clean text)
+        // 2. Quick convert selection item
+        let convert_item = IconMenuItem::with_id(
+            "quick_convert",
+            "Matnni o'girish",
+            true,
+            make_menu_icon(MENU_MAGIC_16),
+            convert_accelerator,
+        );
+
+        // 3. Option checkboxes
+        let ng_item = CheckMenuItem::new("'ng' -> 'ñ' qoidasi", true, initial_ng, None);
+        let autostart_item = CheckMenuItem::new("Windows bilan ishga tushish", true, initial_autostart, None);
+        let game_mode_item = CheckMenuItem::new("O'yin rejimi (To'liq ekran)", true, initial_game_mode, None);
+
+        // 4. Excluded apps submenu (clean text)
         let excluded_submenu = Submenu::new("Istisno dasturlar", true);
         populate_excluded_submenu(&excluded_submenu, excluded_apps, running_apps);
 
-        // 3. Current version label
+        // 5. Statistics submenu
+        let stats_submenu = Submenu::new("Statistika", true);
+        let stats_count_item = IconMenuItem::new(
+            format!("Jami o'zgartirishlar: {} ta", format_number(total_conversions)),
+            false,
+            make_menu_icon(MENU_STATS_16),
+            None,
+        );
+        let minutes = calculate_time_saved(total_conversions);
+        let stats_time_item = MenuItem::new(
+            format!("Tejalgan vaqt: ~{} daqiqa", minutes),
+            false,
+            None,
+        );
+        let stats_clear_item = IconMenuItem::with_id(
+            "clear_stats",
+            "Statistikani tozalash",
+            true,
+            make_menu_icon(MENU_TRASH_16),
+            None,
+        );
+        let _ = stats_submenu.append_items(&[
+            &stats_count_item,
+            &stats_time_item,
+            &PredefinedMenuItem::separator(),
+            &stats_clear_item,
+        ]);
+
+        // 6. Current version label
         let version_item = MenuItem::new(format!("Harfiy v{}", current_version), false, None);
 
-        // 4. Dynamic single update item with real icon
+        // 7. Dynamic single update item with real icon
         let update_item = IconMenuItem::with_id(
             "update_action",
             "Eng so'nggi versiya",
@@ -231,7 +330,7 @@ impl TrayController {
             None,
         );
 
-        // 5. Telegram links: Blog & Support with real icons and short text
+        // 8. Telegram links: Blog & Support with real icons and short text
         let blog_item = IconMenuItem::with_id(
             "open_blog",
             "Blog",
@@ -247,13 +346,20 @@ impl TrayController {
             None,
         );
 
-        // 6. Quit item
+        // 9. Quit item
         let quit_item = MenuItem::new("Chiqish", true, None);
 
         tray_menu
             .append_items(&[
                 &active_item,
+                &convert_item,
+                &PredefinedMenuItem::separator(),
+                &ng_item,
+                &autostart_item,
+                &game_mode_item,
+                &PredefinedMenuItem::separator(),
                 &excluded_submenu,
+                &stats_submenu,
                 &PredefinedMenuItem::separator(),
                 &version_item,
                 &update_item,
@@ -278,7 +384,7 @@ impl TrayController {
             .build()
             .map_err(|e| TrayError::TrayInit(e.to_string()))?;
 
-        // Setup Global Hotkey
+        // Setup Global Hotkeys
         let hotkey_manager = GlobalHotKeyManager::new()
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
@@ -290,40 +396,50 @@ impl TrayController {
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
+        let convert_hotkey: Option<HotKey> = convert_hotkey_str
+            .parse()
+            .ok()
+            .or_else(|| Some(HotKey::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyU)));
+
+        if let Some(chk) = convert_hotkey {
+            let _ = hotkey_manager.register(chk);
+        }
+
         Ok(Self {
             tray_icon,
             _hotkey_manager: hotkey_manager,
             hotkey,
+            convert_hotkey,
             active_item,
+            convert_item,
+            ng_item,
+            autostart_item,
+            game_mode_item,
             excluded_submenu,
+            stats_count_item,
+            stats_time_item,
             _version_item: version_item,
             update_item,
             blog_item,
             support_item,
             quit_item,
             is_active,
+            enable_ng,
+            autostart,
+            game_mode,
             has_update,
             last_hotkey_press,
+            last_convert_hotkey_press,
         })
     }
 
     /// Check for tray menu or hotkey events (non-blocking).
     pub fn poll_events(&self) -> Option<TrayCommand> {
-        // Check global hotkey events (debounced 250ms for responsive, single toggle)
+        // Check global hotkey events (debounced 250ms for responsive toggle)
         while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.hotkey.id() {
                 let should_toggle = match event.state {
-                    global_hotkey::HotKeyState::Pressed => {
-                        let mut last = self.last_hotkey_press.lock().unwrap();
-                        if last.elapsed() >= Duration::from_millis(250) {
-                            *last = Instant::now();
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    global_hotkey::HotKeyState::Released => {
-                        // Fallback in case Pressed was not delivered
+                    global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
                         let mut last = self.last_hotkey_press.lock().unwrap();
                         if last.elapsed() >= Duration::from_millis(250) {
                             *last = Instant::now();
@@ -339,6 +455,24 @@ impl TrayController {
                     self.update_state(new_state);
                     return Some(TrayCommand::ToggleActive(new_state));
                 }
+            } else if let Some(chk) = self.convert_hotkey {
+                if event.id == chk.id() {
+                    let should_convert = match event.state {
+                        global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
+                            let mut last = self.last_convert_hotkey_press.lock().unwrap();
+                            if last.elapsed() >= Duration::from_millis(300) {
+                                *last = Instant::now();
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    };
+
+                    if should_convert {
+                        return Some(TrayCommand::QuickConvertText);
+                    }
+                }
             }
         }
 
@@ -348,6 +482,23 @@ impl TrayController {
                 let new_state = !self.is_active.load(Ordering::SeqCst);
                 self.update_state(new_state);
                 return Some(TrayCommand::ToggleActive(new_state));
+            } else if event.id == self.convert_item.id() {
+                return Some(TrayCommand::QuickConvertText);
+            } else if event.id == self.ng_item.id() {
+                let new_state = !self.enable_ng.load(Ordering::SeqCst);
+                self.enable_ng.store(new_state, Ordering::SeqCst);
+                self.ng_item.set_checked(new_state);
+                return Some(TrayCommand::ToggleNg(new_state));
+            } else if event.id == self.autostart_item.id() {
+                let new_state = !self.autostart.load(Ordering::SeqCst);
+                self.autostart.store(new_state, Ordering::SeqCst);
+                self.autostart_item.set_checked(new_state);
+                return Some(TrayCommand::ToggleAutostart(new_state));
+            } else if event.id == self.game_mode_item.id() {
+                let new_state = !self.game_mode.load(Ordering::SeqCst);
+                self.game_mode.store(new_state, Ordering::SeqCst);
+                self.game_mode_item.set_checked(new_state);
+                return Some(TrayCommand::ToggleGameMode(new_state));
             } else if event.id == self.update_item.id() {
                 if self.has_update.load(Ordering::SeqCst) {
                     return Some(TrayCommand::DownloadUpdate);
@@ -366,6 +517,8 @@ impl TrayController {
                     return Some(TrayCommand::PickExcludedAppExplorer);
                 } else if id_str == "clear_all_excluded" {
                     return Some(TrayCommand::ClearAllExcludedApps);
+                } else if id_str == "clear_stats" {
+                    return Some(TrayCommand::ClearStats);
                 } else if let Some(app) = id_str.strip_prefix("remove_excluded:") {
                     return Some(TrayCommand::RemoveExcludedApp(app.to_string()));
                 } else if let Some(app) = id_str.strip_prefix("add_running:") {
@@ -384,6 +537,37 @@ impl TrayController {
     /// Update the excluded apps submenu dynamically.
     pub fn update_excluded_apps(&self, excluded_apps: &[String], running_apps: &[String]) {
         populate_excluded_submenu(&self.excluded_submenu, excluded_apps, running_apps);
+    }
+
+    /// Update stats display dynamically in the menu.
+    pub fn update_stats(&self, conversions: u64) {
+        let _ = self.stats_count_item.set_text(format!(
+            "Jami o'zgartirishlar: {} ta",
+            format_number(conversions)
+        ));
+        let minutes = calculate_time_saved(conversions);
+        let _ = self.stats_time_item.set_text(format!(
+            "Tejalgan vaqt: ~{} daqiqa",
+            minutes
+        ));
+    }
+
+    /// Update 'ng' rule toggle state.
+    pub fn set_ng_checked(&self, enabled: bool) {
+        self.enable_ng.store(enabled, Ordering::SeqCst);
+        self.ng_item.set_checked(enabled);
+    }
+
+    /// Update autostart checkbox state.
+    pub fn set_autostart_checked(&self, enabled: bool) {
+        self.autostart.store(enabled, Ordering::SeqCst);
+        self.autostart_item.set_checked(enabled);
+    }
+
+    /// Update game mode checkbox state.
+    pub fn set_game_mode_checked(&self, enabled: bool) {
+        self.game_mode.store(enabled, Ordering::SeqCst);
+        self.game_mode_item.set_checked(enabled);
     }
 
     /// Update tray menu when a new version is discovered.
@@ -442,11 +626,13 @@ impl TrayController {
 pub struct StandaloneHotKey {
     _hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
+    convert_hotkey: Option<HotKey>,
     last_press: Mutex<Instant>,
+    last_convert_press: Mutex<Instant>,
 }
 
 impl StandaloneHotKey {
-    pub fn new(hotkey_str: &str) -> Result<Self, TrayError> {
+    pub fn new(hotkey_str: &str, convert_hotkey_str: &str) -> Result<Self, TrayError> {
         let hotkey_manager = GlobalHotKeyManager::new()
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
@@ -458,30 +644,30 @@ impl StandaloneHotKey {
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
+        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok();
+        if let Some(chk) = convert_hotkey {
+            let _ = hotkey_manager.register(chk);
+        }
+
         Ok(Self {
             _hotkey_manager: hotkey_manager,
             hotkey,
+            convert_hotkey,
             last_press: Mutex::new(
+                Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+            ),
+            last_convert_press: Mutex::new(
                 Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
             ),
         })
     }
 
-    /// Poll for hotkey press events. Returns true if hotkey was triggered.
-    pub fn poll(&self) -> bool {
+    /// Poll for hotkey press events.
+    pub fn poll_command(&self) -> Option<TrayCommand> {
         while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.hotkey.id() {
                 let should_toggle = match event.state {
-                    global_hotkey::HotKeyState::Pressed => {
-                        let mut last = self.last_press.lock().unwrap();
-                        if last.elapsed() >= Duration::from_millis(250) {
-                            *last = Instant::now();
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    global_hotkey::HotKeyState::Released => {
+                    global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
                         let mut last = self.last_press.lock().unwrap();
                         if last.elapsed() >= Duration::from_millis(250) {
                             *last = Instant::now();
@@ -493,11 +679,34 @@ impl StandaloneHotKey {
                 };
 
                 if should_toggle {
-                    return true;
+                    return Some(TrayCommand::ToggleActive(false));
+                }
+            } else if let Some(chk) = self.convert_hotkey {
+                if event.id == chk.id() {
+                    let should_convert = match event.state {
+                        global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
+                            let mut last = self.last_convert_press.lock().unwrap();
+                            if last.elapsed() >= Duration::from_millis(300) {
+                                *last = Instant::now();
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    };
+
+                    if should_convert {
+                        return Some(TrayCommand::QuickConvertText);
+                    }
                 }
             }
         }
-        false
+        None
+    }
+
+    /// Poll for active toggle hotkey.
+    pub fn poll(&self) -> bool {
+        matches!(self.poll_command(), Some(TrayCommand::ToggleActive(_)))
     }
 }
 

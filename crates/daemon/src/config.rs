@@ -11,9 +11,21 @@ pub struct AppConfig {
     #[serde(default = "default_enable_ng")]
     pub enable_ng: bool,
 
+    /// Smart apostrophe (hamza / tutuq belgisi) auto-conversion to ʻ (default: true)
+    #[serde(default = "default_smart_apostrophe")]
+    pub smart_apostrophe: bool,
+
+    /// Automatic game mode detection for fullscreen applications (default: true)
+    #[serde(default = "default_game_mode")]
+    pub game_mode: bool,
+
     /// Global hotkey combination to toggle on/off (default: "Ctrl+Shift+U")
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+
+    /// Global hotkey combination to quickly convert selected text (default: "Ctrl+Alt+U")
+    #[serde(default = "default_convert_hotkey")]
+    pub convert_hotkey: String,
 
     /// Executable names where auto-conversion should be temporarily suspended
     #[serde(default = "default_excluded_apps")]
@@ -30,10 +42,22 @@ pub struct AppConfig {
     /// GitHub repository fallback to check for updates (default: "0605AbMu/harfiy")
     #[serde(default = "default_github_repo")]
     pub github_repo: String,
+
+    /// Total number of converted digraphs and apostrophes
+    #[serde(default)]
+    pub total_conversions: u64,
 }
 
 fn default_enable_ng() -> bool {
     false
+}
+
+fn default_smart_apostrophe() -> bool {
+    true
+}
+
+fn default_game_mode() -> bool {
+    true
 }
 
 fn default_check_updates() -> bool {
@@ -52,6 +76,10 @@ fn default_hotkey() -> String {
     "Ctrl+Shift+U".to_string()
 }
 
+fn default_convert_hotkey() -> String {
+    "Ctrl+Alt+U".to_string()
+}
+
 fn default_excluded_apps() -> Vec<String> {
     vec![]
 }
@@ -60,11 +88,15 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             enable_ng: default_enable_ng(),
+            smart_apostrophe: default_smart_apostrophe(),
+            game_mode: default_game_mode(),
             hotkey: default_hotkey(),
+            convert_hotkey: default_convert_hotkey(),
             excluded_apps: default_excluded_apps(),
             check_updates: default_check_updates(),
             update_url: default_update_url(),
             github_repo: default_github_repo(),
+            total_conversions: 0,
         }
     }
 }
@@ -130,11 +162,21 @@ mod tests {
     fn test_config_serialization_with_excluded_apps() {
         let mut cfg = AppConfig::default();
         cfg.excluded_apps = vec!["code.exe".to_string(), "telegram.exe".to_string()];
+        cfg.total_conversions = 42;
+        cfg.game_mode = true;
+        cfg.smart_apostrophe = true;
+        cfg.convert_hotkey = "Ctrl+Alt+U".to_string();
+
         let serialized = toml::to_string_pretty(&cfg).unwrap();
         assert!(serialized.contains("code.exe"));
         assert!(serialized.contains("telegram.exe"));
+        assert!(serialized.contains("total_conversions = 42"));
 
         let deserialized: AppConfig = toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized.excluded_apps, vec!["code.exe", "telegram.exe"]);
+        assert_eq!(deserialized.total_conversions, 42);
+        assert!(deserialized.game_mode);
+        assert!(deserialized.smart_apostrophe);
+        assert_eq!(deserialized.convert_hotkey, "Ctrl+Alt+U");
     }
 }

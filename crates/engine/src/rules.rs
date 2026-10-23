@@ -75,6 +75,50 @@ pub fn match_rule(prev: char, curr: char, enable_ng: bool) -> Option<ConversionM
     }
 }
 
+/// Convert an entire string to the new Uzbek Latin orthography in batch mode.
+/// Returns the converted string along with the number of replacements made.
+pub fn convert_text(input: &str, enable_ng: bool, smart_apostrophe: bool) -> (String, usize) {
+    let mut result = String::with_capacity(input.len());
+    let mut count = 0;
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let curr = chars[i];
+        let next = if i + 1 < len { Some(chars[i + 1]) } else { None };
+
+        let mut matched = false;
+        if let Some(n) = next {
+            if let Some(m) = match_rule(curr, n, enable_ng) {
+                result.push_str(m.replacement);
+                count += 1;
+                i += 2;
+                matched = true;
+            }
+        }
+
+        if !matched {
+            // Smart apostrophe (hamza / tutuq belgisi)
+            if smart_apostrophe && (curr == '\'' || curr == '`') {
+                let prev_is_letter = if i > 0 { chars[i - 1].is_alphabetic() } else { false };
+                let next_is_letter = next.map(|c| c.is_alphabetic()).unwrap_or(false);
+                if prev_is_letter && next_is_letter {
+                    result.push('ʻ'); // U+02BB modifier letter turned comma (official tutuq belgisi)
+                    count += 1;
+                    i += 1;
+                    continue;
+                }
+            }
+
+            result.push(curr);
+            i += 1;
+        }
+    }
+
+    (result, count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +167,13 @@ mod tests {
         assert_eq!(match_rule('n', 'g', true).unwrap().replacement, "ñ");
         assert_eq!(match_rule('N', 'g', true).unwrap().replacement, "Ñ");
         assert_eq!(match_rule('N', 'G', true).unwrap().replacement, "Ñ");
+    }
+
+    #[test]
+    fn test_convert_text() {
+        let input = "Shahar ko'chasida choyxona va g'isht bor. A'lo darajada!";
+        let (out, count) = convert_text(input, false, true);
+        assert_eq!(out, "Şahar köçasida çoyxona va ğişt bor. Aʻlo darajada!");
+        assert_eq!(count, 7);
     }
 }

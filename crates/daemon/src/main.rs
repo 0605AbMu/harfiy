@@ -6,7 +6,7 @@
 mod config;
 mod updater;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -123,6 +123,45 @@ fn open_telegram(domain: &str) {
     }
 }
 
+fn perform_quick_convert(
+    app_config: &mut AppConfig,
+    tray_controller: Option<&TrayController>,
+    conversions_counter: &Arc<AtomicU64>,
+) {
+    harfiy_platform::emit_copy();
+    thread::sleep(Duration::from_millis(60));
+
+    if let Some(text) = harfiy_platform::get_clipboard_text() {
+        if !text.is_empty() {
+            let (converted, count) = harfiy_engine::convert_text(
+                &text,
+                app_config.enable_ng,
+                app_config.smart_apostrophe,
+            );
+            if count > 0 && converted != text {
+                harfiy_platform::set_clipboard_text(&converted);
+                harfiy_platform::emit_paste();
+
+                let new_total = conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
+                app_config.total_conversions = new_total;
+                let _ = app_config.save();
+
+                if let Some(tray) = tray_controller {
+                    tray.update_stats(new_total);
+                }
+
+                harfiy_platform::show_custom_hud(
+                    &format!("Matn o'girildi ({} ta harf)", count),
+                    true,
+                );
+                println!("Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.", count);
+            } else {
+                harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
+            }
+        }
+    }
+}
+
 fn run_daemon(no_tray: bool) {
     // Single instance protection: prevent duplicate hooks and installer file locks
     let _instance_guard = match harfiy_platform::acquire_single_instance_lock() {
@@ -137,7 +176,11 @@ fn run_daemon(no_tray: bool) {
     let current_ver = env!("CARGO_PKG_VERSION");
 
     harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
+    harfiy_platform::set_game_mode(app_config.game_mode);
     let mut running_apps = harfiy_platform::scan_running_apps();
+    let is_autostart = harfiy_platform::is_autostart_enabled();
+
+    let conversions_counter = Arc::new(AtomicU64::new(app_config.total_conversions));
 
     println!("Harfiy v{} faollashtirilmoqda...", current_ver);
     println!("Sozlamalar fayli: {}", config_path.display());
@@ -148,6 +191,7 @@ fn run_daemon(no_tray: bool) {
         println!("Qo'shimcha: 'ng' -> 'ñ' yoqilgan.");
     }
     println!("Tezkor tugma: Ctrl + Shift + U");
+    println!("Matnni o'girish: {}", app_config.convert_hotkey);
 
     // Initialize engine
     let engine_inner = HarfiyEngine::new(EngineConfig {
@@ -175,11 +219,16 @@ fn run_daemon(no_tray: bool) {
     #[cfg(windows)]
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
+        let conversions_worker = Arc::clone(&conversions_counter);
         thread::spawn(move || {
             let mut interceptor = WindowsInterceptor::new();
             let res = interceptor.run(move |event| {
                 let mut eng = engine_hook.lock().unwrap();
-                eng.process(event)
+                let action = eng.process(event);
+                if let harfiy_engine::KeyAction::Transform { .. } = action {
+                    conversions_worker.fetch_add(1, Ordering::Relaxed);
+                }
+                action
             });
 
             if let Err(e) = res {
@@ -192,11 +241,16 @@ fn run_daemon(no_tray: bool) {
     #[cfg(target_os = "macos")]
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
+        let conversions_worker = Arc::clone(&conversions_counter);
         thread::spawn(move || {
             let mut interceptor = MacOsInterceptor::new();
             let res = interceptor.run(move |event| {
                 let mut eng = engine_hook.lock().unwrap();
-                eng.process(event)
+                let action = eng.process(event);
+                if let harfiy_engine::KeyAction::Transform { .. } = action {
+                    conversions_worker.fetch_add(1, Ordering::Relaxed);
+                }
+                action
             });
 
             if let Err(e) = res {
@@ -209,11 +263,16 @@ fn run_daemon(no_tray: bool) {
     #[cfg(target_os = "linux")]
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
+        let conversions_worker = Arc::clone(&conversions_counter);
         thread::spawn(move || {
             let mut interceptor = LinuxInterceptor::new();
             let res = interceptor.run(move |event| {
                 let mut eng = engine_hook.lock().unwrap();
-                eng.process(event)
+                let action = eng.process(event);
+                if let harfiy_engine::KeyAction::Transform { .. } = action {
+                    conversions_worker.fetch_add(1, Ordering::Relaxed);
+                }
+                action
             });
 
             if let Err(e) = res {
@@ -232,6 +291,11 @@ fn run_daemon(no_tray: bool) {
             true,
             current_ver,
             &app_config.hotkey,
+            &app_config.convert_hotkey,
+            app_config.enable_ng,
+            is_autostart,
+            app_config.game_mode,
+            app_config.total_conversions,
             &app_config.excluded_apps,
             &running_apps,
         ) {
@@ -241,11 +305,11 @@ fn run_daemon(no_tray: bool) {
                     "Tizim paneli (System Tray) yaratilmadi: {}. Konsol rejimida davom etilmoqda.",
                     e
                 );
-                (None, StandaloneHotKey::new(&app_config.hotkey).ok())
+                (None, StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok())
             }
         }
     } else {
-        (None, StandaloneHotKey::new(&app_config.hotkey).ok())
+        (None, StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok())
     };
 
     struct UpdateEvent {
@@ -347,15 +411,37 @@ fn run_daemon(no_tray: bool) {
 
         // Process standalone hotkey events (when running in headless/no-tray mode)
         if let Some(shk) = &standalone_hotkey {
-            if shk.poll() {
-                let mut eng = engine.lock().unwrap();
-                let active = !eng.is_enabled();
-                eng.set_enabled(active);
-                harfiy_platform::show_status_hud(active);
-                println!(
-                    "Holat o'zgartirildi (Tezkor tugma): {}",
-                    if active { "Faol" } else { "To'xtatilgan" }
-                );
+            if let Some(cmd) = shk.poll_command() {
+                match cmd {
+                    TrayCommand::ToggleActive(_) => {
+                        let mut eng = engine.lock().unwrap();
+                        let active = !eng.is_enabled();
+                        eng.set_enabled(active);
+                        harfiy_platform::show_status_hud(active);
+                        println!(
+                            "Holat o'zgartirildi (Tezkor tugma): {}",
+                            if active { "Faol" } else { "To'xtatilgan" }
+                        );
+                    }
+                    TrayCommand::QuickConvertText => {
+                        perform_quick_convert(
+                            &mut app_config,
+                            tray_controller.as_ref(),
+                            &conversions_counter,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Periodically sync real-time conversion stats
+        let current_conversions = conversions_counter.load(Ordering::Relaxed);
+        if current_conversions != app_config.total_conversions {
+            app_config.total_conversions = current_conversions;
+            let _ = app_config.save();
+            if let Some(tray) = &tray_controller {
+                tray.update_stats(current_conversions);
             }
         }
 
@@ -371,6 +457,54 @@ fn run_daemon(no_tray: bool) {
                             "Holat o'zgartirildi: {}",
                             if active { "Faol" } else { "To'xtatilgan" }
                         );
+                    }
+                    TrayCommand::QuickConvertText => {
+                        perform_quick_convert(
+                            &mut app_config,
+                            tray_controller.as_ref(),
+                            &conversions_counter,
+                        );
+                    }
+                    TrayCommand::ToggleNg(enabled) => {
+                        app_config.enable_ng = enabled;
+                        let _ = app_config.save();
+                        {
+                            let mut eng = engine.lock().unwrap();
+                            eng.set_enable_ng(enabled);
+                        }
+                        harfiy_platform::show_custom_hud(
+                            if enabled { "'ng' -> 'ñ' qoidasi yoqildi" } else { "'ng' -> 'ñ' qoidasi o'chirildi" },
+                            true,
+                        );
+                        println!("'ng' -> 'ñ' qoidasi: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                    }
+                    TrayCommand::ToggleAutostart(enabled) => {
+                        let _ = harfiy_platform::set_autostart(enabled);
+                        harfiy_platform::show_custom_hud(
+                            if enabled { "Windows bilan ishga tushish yoqildi" } else { "Windows bilan ishga tushish o'chirildi" },
+                            true,
+                        );
+                        println!("Windows bilan ishga tushish: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                    }
+                    TrayCommand::ToggleGameMode(enabled) => {
+                        app_config.game_mode = enabled;
+                        let _ = app_config.save();
+                        harfiy_platform::set_game_mode(enabled);
+                        harfiy_platform::show_custom_hud(
+                            if enabled { "O'yin rejimi yoqildi" } else { "O'yin rejimi o'chirildi" },
+                            true,
+                        );
+                        println!("O'yin rejimi (Fullscreen): {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                    }
+                    TrayCommand::ClearStats => {
+                        conversions_counter.store(0, Ordering::SeqCst);
+                        app_config.total_conversions = 0;
+                        let _ = app_config.save();
+                        if let Some(tray) = &tray_controller {
+                            tray.update_stats(0);
+                        }
+                        harfiy_platform::show_custom_hud("Statistika tozalandi", true);
+                        println!("Statistika tozalandi.");
                     }
                     TrayCommand::CheckUpdates => {
                         println!("Yangilanishlar tekshirilmoqda...");
@@ -497,6 +631,13 @@ fn run_daemon(no_tray: bool) {
     }
 
     // Graceful cleanup
+    // 0. Persist latest conversions count
+    let final_conversions = conversions_counter.load(Ordering::Relaxed);
+    if final_conversions != app_config.total_conversions {
+        app_config.total_conversions = final_conversions;
+        let _ = app_config.save();
+    }
+
     // 1. Remove tray icon immediately
     tray_controller.take();
 

@@ -64,10 +64,11 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
 pub use self::windows::{
-    acquire_single_instance_lock, attach_parent_console, is_current_app_excluded,
-    pick_executable_dialog, pump_messages, scan_running_apps, set_excluded_apps,
-    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, SingleInstanceGuard,
-    WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    acquire_single_instance_lock, attach_parent_console, emit_copy, emit_paste, get_clipboard_text,
+    is_autostart_enabled, is_current_app_excluded, is_foreground_fullscreen, is_game_mode,
+    pick_executable_dialog, pump_messages, scan_running_apps, set_autostart, set_clipboard_text,
+    set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
+    show_status_hud, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(not(windows))]
@@ -113,6 +114,45 @@ pub fn set_excluded_apps(_apps: &[String]) {}
 
 #[cfg(not(windows))]
 pub fn is_current_app_excluded() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn is_autostart_enabled() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn set_autostart(_enabled: bool) -> Result<(), PlatformError> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn get_clipboard_text() -> Option<String> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn set_clipboard_text(_text: &str) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn emit_copy() {}
+
+#[cfg(not(windows))]
+pub fn emit_paste() {}
+
+#[cfg(not(windows))]
+pub fn is_foreground_fullscreen() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn set_game_mode(_enabled: bool) {}
+
+#[cfg(not(windows))]
+pub fn is_game_mode() -> bool {
     false
 }
 
