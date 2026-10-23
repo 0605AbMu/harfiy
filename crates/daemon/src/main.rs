@@ -113,6 +113,16 @@ fn run_check_updates_cli() {
     }
 }
 
+fn open_telegram(domain: &str) {
+    let deep_link = format!("tg://resolve?domain={}", domain);
+    // 1. Try native Telegram deep link first (opens app directly if installed)
+    if open::that(&deep_link).is_err() {
+        // 2. Fallback to universal web link in default browser
+        let web_url = format!("https://t.me/{}", domain);
+        let _ = open::that(&web_url);
+    }
+}
+
 fn run_daemon(no_tray: bool) {
     // Single instance protection: prevent duplicate hooks and installer file locks
     let _instance_guard = match harfiy_platform::acquire_single_instance_lock() {
@@ -463,12 +473,12 @@ fn run_daemon(no_tray: bool) {
                         }
                     }
                     TrayCommand::OpenBlog => {
-                        println!("Telegram blog ochilmoqda: https://t.me/abdumannon_notes");
-                        let _ = open::that("https://t.me/abdumannon_notes");
+                        println!("Telegram blog ochilmoqda: tg://resolve?domain=abdumannon_notes (@abdumannon_notes)");
+                        open_telegram("abdumannon_notes");
                     }
                     TrayCommand::OpenSupport => {
-                        println!("Telegram support ochilmoqda: https://t.me/abdumannon_shamsiyev");
-                        let _ = open::that("https://t.me/abdumannon_shamsiyev");
+                        println!("Telegram support ochilmoqda: tg://resolve?domain=abdumannon_shamsiyev (@abdumannon_shamsiyev)");
+                        open_telegram("abdumannon_shamsiyev");
                     }
                 }
             }
