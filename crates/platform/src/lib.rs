@@ -65,7 +65,8 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 #[cfg(windows)]
 pub use self::windows::{
     acquire_single_instance_lock, attach_parent_console, pump_messages, show_confirm_dialog,
-    show_info_dialog, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    show_info_dialog, show_status_hud, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor,
+    HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(not(windows))]
@@ -80,6 +81,15 @@ pub fn show_info_dialog(title: &str, message: &str) {
 pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
     println!("[{}] {}", title, message);
     true
+}
+
+#[cfg(not(windows))]
+pub fn show_status_hud(active: bool) {
+    if active {
+        println!("[HUD] Harfiy: Faol");
+    } else {
+        println!("[HUD] Harfiy: To'xtatildi");
+    }
 }
 
 #[cfg(target_os = "macos")]

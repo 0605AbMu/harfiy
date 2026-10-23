@@ -316,6 +316,7 @@ fn run_daemon(no_tray: bool) {
                 let mut eng = engine.lock().unwrap();
                 let active = !eng.is_enabled();
                 eng.set_enabled(active);
+                harfiy_platform::show_status_hud(active);
                 println!(
                     "Holat o'zgartirildi (Tezkor tugma): {}",
                     if active { "Faol" } else { "To'xtatilgan" }
@@ -330,6 +331,7 @@ fn run_daemon(no_tray: bool) {
                     TrayCommand::ToggleActive(active) => {
                         let mut eng = engine.lock().unwrap();
                         eng.set_enabled(active);
+                        harfiy_platform::show_status_hud(active);
                         println!(
                             "Holat o'zgartirildi: {}",
                             if active { "Faol" } else { "To'xtatilgan" }

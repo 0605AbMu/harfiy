@@ -1,8 +1,8 @@
 {
-  "version": "0.2.0",
-  "name": "Harfiy v0.2.0",
+  "version": "0.3.0",
+  "name": "Harfiy v0.3.0",
   "url": "https://abdumannon-shamsiyev.uz/harfiy/updates/",
-  "windows": "0.2.0/harfiy-0.2.0-windows-x86_64-setup.exe",
-  "linux": "0.2.0/harfiy_0.2.0_amd64.deb",
-  "macos": "0.2.0/harfiy-0.2.0-macos-x86_64.dmg"
+  "windows": "0.3.0/harfiy-0.3.0-windows-x86_64-setup.exe",
+  "linux": "0.3.0/harfiy_0.3.0_amd64.deb",
+  "macos": "0.3.0/harfiy-0.3.0-macos-x86_64.dmg"
 }

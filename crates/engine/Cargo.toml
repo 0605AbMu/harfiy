@@ -1,6 +1,6 @@
 [package]
 name = "harfiy-engine"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "Platform-independent Uzbek Latin auto-conversion FSM and rule engine for Harfiy"

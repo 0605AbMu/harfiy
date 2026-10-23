@@ -125,11 +125,12 @@ fn get_original_pair_str(prev: char, curr: char) -> Option<&'static str> {
     }
 }
 
-/// The core conversion engine containing the FSM.
+/// The core conversion engine containing the FSM and smart backspace history buffer.
 #[derive(Debug, Clone)]
 pub struct HarfiyEngine {
     state: FsmState,
     config: EngineConfig,
+    history: Vec<char>,
 }
 
 impl Default for HarfiyEngine {
@@ -144,6 +145,7 @@ impl HarfiyEngine {
         Self {
             state: FsmState::Idle,
             config,
+            history: Vec::with_capacity(32),
         }
     }
 
@@ -160,9 +162,18 @@ impl HarfiyEngine {
         self.config.enabled
     }
 
-    /// Reset internal state back to IDLE.
+    /// Reset internal state and character history back to IDLE.
     pub fn reset(&mut self) {
         self.state = FsmState::Idle;
+        self.history.clear();
+    }
+
+    /// Push a character to the bounded history buffer (keeps at most 32 recent chars).
+    fn push_history(&mut self, c: char) {
+        if self.history.len() >= 32 {
+            self.history.remove(0);
+        }
+        self.history.push(c);
     }
 
     /// Get current FSM state (useful for diagnostics and testing).
@@ -181,6 +192,10 @@ impl HarfiyEngine {
             if event == InputEvent::Special(SpecialKey::Backspace) {
                 // Instant Undo: erase the converted char (1 backspace) and emit original pair
                 self.state = FsmState::Idle;
+                self.history.pop();
+                for ch in undo_replacement.chars() {
+                    self.push_history(ch);
+                }
                 return KeyAction::Transform {
                     backspaces_count: 1,
                     replacement: undo_replacement,
@@ -198,8 +213,27 @@ impl HarfiyEngine {
 
     fn handle_special(&mut self, key: SpecialKey) -> KeyAction {
         match key {
-            SpecialKey::Backspace
-            | SpecialKey::Escape
+            SpecialKey::Backspace => {
+                // Smart Backspace Buffer:
+                // Pop the deleted character from history
+                if !self.history.is_empty() {
+                    self.history.pop();
+                }
+
+                // Check the new tail of history. If it is a first trigger,
+                // restore WaitingForSecondChar state!
+                if let Some(&prev) = self.history.last() {
+                    if is_first_trigger(prev, self.config.enable_ng) {
+                        self.state = FsmState::WaitingForSecondChar { prev_char: prev };
+                    } else {
+                        self.state = FsmState::Idle;
+                    }
+                } else {
+                    self.state = FsmState::Idle;
+                }
+                KeyAction::PassThrough
+            }
+            SpecialKey::Escape
             | SpecialKey::Enter
             | SpecialKey::Tab
             | SpecialKey::ArrowLeft
@@ -221,12 +255,13 @@ impl HarfiyEngine {
     fn handle_char(&mut self, c: char) -> KeyAction {
         // Check if character is a word boundary delimiter
         if is_word_delimiter(c) {
-            self.state = FsmState::Idle;
+            self.reset();
             return KeyAction::PassThrough;
         }
 
         match self.state {
             FsmState::Idle => {
+                self.push_history(c);
                 if is_first_trigger(c, self.config.enable_ng) {
                     self.state = FsmState::WaitingForSecondChar { prev_char: c };
                 }
@@ -241,12 +276,17 @@ impl HarfiyEngine {
                     self.state = FsmState::JustTransformed {
                         undo_replacement: undo_str,
                     };
+                    self.history.pop();
+                    for ch in rule.replacement.chars() {
+                        self.push_history(ch);
+                    }
                     KeyAction::Transform {
                         backspaces_count: 1,
                         replacement: rule.replacement,
                     }
                 } else {
                     // Does not form a pair with prev_char.
+                    self.push_history(c);
                     // If 'c' is itself a first trigger, transition to WaitingForSecondChar(c)
                     if is_first_trigger(c, self.config.enable_ng) {
                         self.state = FsmState::WaitingForSecondChar { prev_char: c };
@@ -515,6 +555,85 @@ mod tests {
         assert_eq!(
             engine.process(InputEvent::Char('h')),
             KeyAction::PassThrough
+        );
+    }
+
+    #[test]
+    fn test_smart_backspace_restores_trigger_osa() {
+        let mut engine = HarfiyEngine::default();
+
+        // User types 'o', 's', 'a'
+        assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('a')), KeyAction::PassThrough);
+
+        // User deletes 'a' with Backspace
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::PassThrough
+        );
+
+        // Now user types 'h' -> should transform 's' + 'h' -> 'ş'!
+        assert_eq!(
+            engine.process(InputEvent::Char('h')),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ş",
+            }
+        );
+    }
+
+    #[test]
+    fn test_smart_backspace_apostrophe_oga() {
+        let mut engine = HarfiyEngine::default();
+
+        // User types 'o', 'g', 'x'
+        assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('g')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('x')), KeyAction::PassThrough);
+
+        // Delete 'x'
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::PassThrough
+        );
+
+        // Type apostrophe -> should transform 'g' + '\'' -> 'ğ'!
+        assert_eq!(
+            engine.process(InputEvent::Char('\'')),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ğ",
+            }
+        );
+    }
+
+    #[test]
+    fn test_smart_backspace_multiple_pops() {
+        let mut engine = HarfiyEngine::default();
+
+        // Type 's', 'x', 'y'
+        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('x')), KeyAction::PassThrough);
+        assert_eq!(engine.process(InputEvent::Char('y')), KeyAction::PassThrough);
+
+        // Backspace twice
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::PassThrough
+        );
+
+        // Now 's' is active again -> type 'h'
+        assert_eq!(
+            engine.process(InputEvent::Char('h')),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ş",
+            }
         );
     }
 }

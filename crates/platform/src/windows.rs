@@ -1,10 +1,17 @@
 //! Windows implementation of keyboard interceptor and emitter using Win32 API.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
-use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, CreateFontW, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW,
+    EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn,
+    DT_CENTER, DT_SINGLELINE, DT_VCENTER, HBRUSH, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
+};
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
@@ -14,10 +21,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, MessageBoxW, PeekMessageW, PostThreadMessageW,
-    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES, KBDLLHOOKSTRUCT,
-    MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG, PM_NOREMOVE, PM_REMOVE,
-    WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
+    CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    GetMessageW, GetSystemMetrics, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
+    PostQuitMessage, PostThreadMessageW, RegisterClassW, SetLayeredWindowAttributes, SetTimer,
+    SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES,
+    KBDLLHOOKSTRUCT, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG,
+    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP, WM_DESTROY,
+    WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
@@ -98,6 +109,191 @@ pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
             MB_YESNO | MB_ICONQUESTION,
         );
         res == IDYES
+    }
+}
+
+static HUD_HWND: AtomicIsize = AtomicIsize::new(0);
+static HUD_ACTIVE: AtomicBool = AtomicBool::new(true);
+
+const WM_HUD_UPDATE: u32 = WM_APP + 1;
+
+/// Show or update a modern, native floating status HUD indicator on Windows.
+pub fn show_status_hud(active: bool) {
+    HUD_ACTIVE.store(active, Ordering::SeqCst);
+    let hwnd_raw = HUD_HWND.load(Ordering::SeqCst);
+    if hwnd_raw != 0 {
+        unsafe {
+            let _ = PostMessageW(
+                HWND(hwnd_raw as *mut _),
+                WM_HUD_UPDATE,
+                WPARAM(if active { 1 } else { 0 }),
+                LPARAM(0),
+            );
+        }
+    } else {
+        std::thread::spawn(move || {
+            run_hud_window(active);
+        });
+    }
+}
+
+fn run_hud_window(initial_active: bool) {
+    use windows::core::w;
+
+    HUD_ACTIVE.store(initial_active, Ordering::SeqCst);
+
+    unsafe {
+        let class_name = w!("HarfiyStatusHUD");
+        let wnd_class = WNDCLASSW {
+            lpfnWndProc: Some(hud_wnd_proc),
+            lpszClassName: class_name,
+            hbrBackground: HBRUSH(std::ptr::null_mut()),
+            ..Default::default()
+        };
+
+        let _ = RegisterClassW(&wnd_class);
+
+        let width = 230;
+        let height = 44;
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let x = (screen_w - width) / 2;
+        let y = 60; // Top-center floating position
+
+        let hwnd = match CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+            class_name,
+            w!("Harfiy HUD"),
+            WS_POPUP,
+            x,
+            y,
+            width,
+            height,
+            None,
+            None,
+            None,
+            None,
+        ) {
+            Ok(h) => h,
+            Err(_) => return,
+        };
+
+        HUD_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
+
+        // Apply smooth rounded pill region (radius 22px)
+        let rgn = CreateRoundRectRgn(0, 0, width + 1, height + 1, 22, 22);
+        let _ = SetWindowRgn(hwnd, rgn, true);
+
+        // Modern semi-transparent glass style (~94% opacity)
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 240, LWA_ALPHA);
+
+        // Display without stealing focus from active application
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+
+        // Auto-close timer after 1100ms
+        let _ = SetTimer(hwnd, 1, 1100, None);
+
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        HUD_HWND.store(0, Ordering::SeqCst);
+    }
+}
+
+unsafe extern "system" fn hud_wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_HUD_UPDATE => {
+            let active = wparam.0 != 0;
+            HUD_ACTIVE.store(active, Ordering::SeqCst);
+            // Reset 1.1s auto-close timer and repaint
+            let _ = SetTimer(hwnd, 1, 1100, None);
+            let _ = InvalidateRect(hwnd, None, true);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            let _ = KillTimer(hwnd, 1);
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+        WM_PAINT => {
+            let mut ps = PAINTSTRUCT::default();
+            let hdc = BeginPaint(hwnd, &mut ps);
+
+            let active = HUD_ACTIVE.load(Ordering::SeqCst);
+
+            // Dark sleek slate background: RGB(28, 30, 36) -> 0x00241E1C
+            let bg_brush = CreateSolidBrush(COLORREF(0x00241E1C));
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: 230,
+                bottom: 44,
+            };
+            FillRect(hdc, &rect, bg_brush);
+            let _ = DeleteObject(HGDIOBJ(bg_brush.0 as *mut _));
+
+            // Setup transparent text drawing
+            SetBkMode(hdc, TRANSPARENT);
+
+            // Create modern Segoe UI font
+            use windows::core::w;
+            let font = CreateFontW(
+                -17,
+                0,
+                0,
+                0,
+                600, // FW_SEMIBOLD
+                0,
+                0,
+                0,
+                1, // DEFAULT_CHARSET
+                0,
+                0,
+                0,
+                0,
+                w!("Segoe UI"),
+            );
+            let old_font = SelectObject(hdc, HGDIOBJ(font.0 as *mut _));
+
+            // Status message and color:
+            // Active: Green dot RGB(34, 197, 94) -> 0x005EC522
+            // Paused: Gray dot RGB(156, 163, 175) -> 0x00AFA39C
+            let (indicator, status_text, color) = if active {
+                ("●", "Harfiy: Faol", COLORREF(0x005EC522))
+            } else {
+                ("●", "Harfiy: To'xtatildi", COLORREF(0x00AFA39C))
+            };
+
+            let full_text = format!("{}  {}", indicator, status_text);
+            let mut text_wide: Vec<u16> = full_text.encode_utf16().chain(std::iter::once(0)).collect();
+
+            SetTextColor(hdc, color);
+            DrawTextW(
+                hdc,
+                &mut text_wide,
+                &mut rect,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+
+            SelectObject(hdc, old_font);
+            let _ = DeleteObject(HGDIOBJ(font.0 as *mut _));
+
+            let _ = EndPaint(hwnd, &ps);
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            HUD_HWND.store(0, Ordering::SeqCst);
+            PostQuitMessage(0);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 
