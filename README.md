@@ -161,6 +161,7 @@ Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **
 ## 👨‍💻 Muallif va Aloqa
 
 * **Muallif va Publisher:** Abdumannon Shamsiyev
+* **Blog:** [@abdumannon_notes](https://t.me/abdumannon_notes)
+* **Qo'llab-quvvatlash (Support):** [@abdumannon_shamsiyev](https://t.me/abdumannon_shamsiyev)
 * **LinkedIn:** [linkedin.com/in/abdumannon-shamsiyev](https://www.linkedin.com/in/abdumannon-shamsiyev)
-* **Telegram:** [@Abdumannon_Shamsiyev](https://t.me/Abdumannon_Shamsiyev)
 

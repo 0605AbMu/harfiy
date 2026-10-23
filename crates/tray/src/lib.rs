@@ -38,6 +38,8 @@ pub enum TrayCommand {
     PickExcludedAppExplorer,
     AddExcludedApp(String),
     RemoveExcludedApp(String),
+    OpenBlog,
+    OpenSupport,
 }
 
 /// Remove all existing items from a Submenu.
@@ -179,7 +181,16 @@ impl TrayController {
         // 4. Dynamic single update item
         let update_item = MenuItem::new("Yangilanishlarni tekshirish", true, None);
 
-        // 5. Quit item
+        // 5. Telegram links: Blog & Support
+        let blog_item = MenuItem::with_id("open_blog", "📢 Blog (@abdumannon_notes)", true, None);
+        let support_item = MenuItem::with_id(
+            "open_support",
+            "💬 Qo'llab-quvvatlash (@abdumannon_shamsiyev)",
+            true,
+            None,
+        );
+
+        // 6. Quit item
         let quit_item = MenuItem::new("Chiqish", true, None);
 
         tray_menu
@@ -189,6 +200,9 @@ impl TrayController {
                 &PredefinedMenuItem::separator(),
                 &version_item,
                 &update_item,
+                &PredefinedMenuItem::separator(),
+                &blog_item,
+                &support_item,
                 &PredefinedMenuItem::separator(),
                 &quit_item,
             ])
@@ -291,6 +305,10 @@ impl TrayController {
                     return Some(TrayCommand::RemoveExcludedApp(app.to_string()));
                 } else if let Some(app) = id_str.strip_prefix("add_running:") {
                     return Some(TrayCommand::AddExcludedApp(app.to_string()));
+                } else if id_str == "open_blog" {
+                    return Some(TrayCommand::OpenBlog);
+                } else if id_str == "open_support" {
+                    return Some(TrayCommand::OpenSupport);
                 }
             }
         }

@@ -131,6 +131,8 @@ fn run_daemon(no_tray: bool) {
 
     println!("Harfiy v{} faollashtirilmoqda...", current_ver);
     println!("Sozlamalar fayli: {}", config_path.display());
+    println!("Blog: https://t.me/abdumannon_notes");
+    println!("Qo'llab-quvvatlash: https://t.me/abdumannon_shamsiyev");
     println!("Qoidalar: 'sh' -> 'ş', 'ch' -> 'ç', 'o''' -> 'ö', 'g''' -> 'ğ'");
     if app_config.enable_ng {
         println!("Qo'shimcha: 'ng' -> 'ñ' yoqilgan.");
@@ -459,6 +461,14 @@ fn run_daemon(no_tray: bool) {
                             );
                             println!("Istisno dasturlardan olib tashlandi: {}", app_lower);
                         }
+                    }
+                    TrayCommand::OpenBlog => {
+                        println!("Telegram blog ochilmoqda: https://t.me/abdumannon_notes");
+                        let _ = open::that("https://t.me/abdumannon_notes");
+                    }
+                    TrayCommand::OpenSupport => {
+                        println!("Telegram support ochilmoqda: https://t.me/abdumannon_shamsiyev");
+                        let _ = open::that("https://t.me/abdumannon_shamsiyev");
                     }
                 }
             }
