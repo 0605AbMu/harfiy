@@ -8,13 +8,23 @@ use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager};
 use tray_icon::menu::accelerator::Accelerator;
 use tray_icon::menu::{
-    CheckMenuItem, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
+    CheckMenuItem, IconMenuItem, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem,
+    Submenu,
 };
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-// Embedded high-quality official Harfiy icons in 32x32 RGBA
 const TRAY_ACTIVE_32: &[u8] = include_bytes!("../../../assets/tray_active_32.rgba");
 const TRAY_PAUSED_32: &[u8] = include_bytes!("../../../assets/tray_paused_32.rgba");
+
+const MENU_BLOG_16: &[u8] = include_bytes!("../../../assets/menu_blog_16.rgba");
+const MENU_SUPPORT_16: &[u8] = include_bytes!("../../../assets/menu_support_16.rgba");
+const MENU_CHECK_16: &[u8] = include_bytes!("../../../assets/menu_check_16.rgba");
+const MENU_STAR_16: &[u8] = include_bytes!("../../../assets/menu_star_16.rgba");
+const MENU_SYNC_16: &[u8] = include_bytes!("../../../assets/menu_sync_16.rgba");
+
+fn make_menu_icon(rgba: &[u8]) -> Option<tray_icon::menu::Icon> {
+    tray_icon::menu::Icon::from_rgba(rgba.to_vec(), 16, 16).ok()
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrayError {
@@ -76,21 +86,21 @@ pub fn populate_excluded_submenu(
     // 1. Pick via Native Windows Explorer
     let pick_item = MenuItem::with_id(
         "pick_explorer",
-        "📂 Fayldan tanlash (.exe)...",
+        "Fayldan tanlash (.exe)...",
         true,
         None,
     );
     let _ = submenu.append(&pick_item);
 
     // 2. Running apps submenu
-    let running_sub = Submenu::new("📱 Ishlayotgan dasturlar", true);
+    let running_sub = Submenu::new("Ishlayotgan dasturlar", true);
     let mut added_any = false;
     for app in running_apps {
         let app_lower = app.to_lowercase();
         if !excluded_apps.iter().any(|e| e.to_lowercase() == app_lower) {
             let item = MenuItem::with_id(
                 format!("add_running:{}", app_lower),
-                format!("➕ {}", app),
+                app,
                 true,
                 None,
             );
@@ -109,13 +119,13 @@ pub fn populate_excluded_submenu(
 
     // 4. Current Excluded Apps list
     if excluded_apps.is_empty() {
-        let empty_item = MenuItem::new("ℹ️ Istisnolar yo'q (barcha joyda faol)", false, None);
+        let empty_item = MenuItem::new("Istisnolar yo'q (barcha joyda faol)", false, None);
         let _ = submenu.append(&empty_item);
     } else {
         for app in excluded_apps {
             let item = MenuItem::with_id(
                 format!("remove_excluded:{}", app.to_lowercase()),
-                format!("❌ {} (Olib tashlash)", app),
+                format!("{} (Olib tashlash)", app),
                 true,
                 None,
             );
@@ -132,7 +142,9 @@ pub struct TrayController {
     active_item: CheckMenuItem,
     excluded_submenu: Submenu,
     _version_item: MenuItem,
-    update_item: MenuItem,
+    update_item: IconMenuItem,
+    blog_item: IconMenuItem,
+    support_item: IconMenuItem,
     quit_item: MenuItem,
     is_active: Arc<AtomicBool>,
     has_update: Arc<AtomicBool>,
@@ -171,22 +183,35 @@ impl TrayController {
         // 1. Active toggle checkbox with shortcut hint
         let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, accelerator);
 
-        // 2. Excluded apps submenu
-        let excluded_submenu = Submenu::new("🚫 Istisno dasturlar", true);
+        // 2. Excluded apps submenu (clean text)
+        let excluded_submenu = Submenu::new("Istisno dasturlar", true);
         populate_excluded_submenu(&excluded_submenu, excluded_apps, running_apps);
 
         // 3. Current version label
         let version_item = MenuItem::new(format!("Harfiy v{}", current_version), false, None);
 
-        // 4. Dynamic single update item
-        let update_item = MenuItem::new("Yangilanishlarni tekshirish", true, None);
-
-        // 5. Telegram links: Blog & Support
-        let blog_item = MenuItem::with_id("open_blog", "📢 Blog (@abdumannon_notes)", true, None);
-        let support_item = MenuItem::with_id(
-            "open_support",
-            "💬 Qo'llab-quvvatlash (@abdumannon_shamsiyev)",
+        // 4. Dynamic single update item with real icon
+        let update_item = IconMenuItem::with_id(
+            "update_action",
+            "Eng so'nggi versiya",
             true,
+            make_menu_icon(MENU_CHECK_16),
+            None,
+        );
+
+        // 5. Telegram links: Blog & Support with real icons and short text
+        let blog_item = IconMenuItem::with_id(
+            "open_blog",
+            "Blog",
+            true,
+            make_menu_icon(MENU_BLOG_16),
+            None,
+        );
+        let support_item = IconMenuItem::with_id(
+            "open_support",
+            "Support",
+            true,
+            make_menu_icon(MENU_SUPPORT_16),
             None,
         );
 
@@ -241,6 +266,8 @@ impl TrayController {
             excluded_submenu,
             _version_item: version_item,
             update_item,
+            blog_item,
+            support_item,
             quit_item,
             is_active,
             has_update,
@@ -295,6 +322,10 @@ impl TrayController {
                 } else {
                     return Some(TrayCommand::CheckUpdates);
                 }
+            } else if event.id == self.blog_item.id() {
+                return Some(TrayCommand::OpenBlog);
+            } else if event.id == self.support_item.id() {
+                return Some(TrayCommand::OpenSupport);
             } else if event.id == self.quit_item.id() {
                 return Some(TrayCommand::Quit);
             } else {
@@ -324,8 +355,9 @@ impl TrayController {
     /// Update tray menu when a new version is discovered.
     pub fn set_update_available(&self, latest_version: &str) {
         self.has_update.store(true, Ordering::SeqCst);
+        self.update_item.set_icon(make_menu_icon(MENU_STAR_16));
         self.update_item
-            .set_text(format!("⭐ Yangilash (v{})", latest_version));
+            .set_text(format!("Yangilash (v{})", latest_version));
         self.update_item.set_enabled(true);
         let _ = self.tray_icon.set_tooltip(Some(format!(
             "Harfiy - Yangi versiya mavjud: v{}!",
@@ -336,16 +368,18 @@ impl TrayController {
     /// Update tray menu when the installed version is already the latest.
     pub fn set_up_to_date(&self) {
         self.has_update.store(false, Ordering::SeqCst);
+        self.update_item.set_icon(make_menu_icon(MENU_CHECK_16));
         self.update_item
-            .set_text("✅ Eng so'nggi versiya");
+            .set_text("Eng so'nggi versiya");
         self.update_item.set_enabled(true);
         let _ = self.tray_icon.set_tooltip(Some("Harfiy - Eng so'nggi versiya o'rnatilgan"));
     }
 
     /// Update tray menu while an update check is in progress.
     pub fn set_checking_updates(&self) {
+        self.update_item.set_icon(make_menu_icon(MENU_SYNC_16));
         self.update_item
-            .set_text("⏳ Tekshirilmoqda...");
+            .set_text("Tekshirilmoqda...");
         self.update_item.set_enabled(false);
         let _ = self.tray_icon.set_tooltip(Some("Harfiy - Yangilanishlar tekshirilmoqda..."));
     }
