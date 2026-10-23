@@ -1,7 +1,6 @@
 //! Finite State Machine for Harfiy.
 
 use crate::rules::{is_first_trigger, is_word_delimiter, match_rule};
-use crate::trie::ExceptionTrie;
 
 /// Action instructed by the engine to the platform emitter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,13 +125,11 @@ fn get_original_pair_str(prev: char, curr: char) -> Option<&'static str> {
     }
 }
 
-/// The core conversion engine containing the FSM, trie, and word tracking buffer.
+/// The core conversion engine containing the FSM.
 #[derive(Debug, Clone)]
 pub struct HarfiyEngine {
     state: FsmState,
     config: EngineConfig,
-    exceptions: ExceptionTrie,
-    word_buffer: Vec<char>,
 }
 
 impl Default for HarfiyEngine {
@@ -144,13 +141,9 @@ impl Default for HarfiyEngine {
 impl HarfiyEngine {
     /// Create a new engine instance with the given configuration.
     pub fn new(config: EngineConfig) -> Self {
-        let mut word_buffer = Vec::with_capacity(64);
-        word_buffer.reserve_exact(64);
         Self {
             state: FsmState::Idle,
             config,
-            exceptions: ExceptionTrie::with_defaults(),
-            word_buffer,
         }
     }
 
@@ -167,15 +160,9 @@ impl HarfiyEngine {
         self.config.enabled
     }
 
-    /// Reset internal state and word buffer back to IDLE.
+    /// Reset internal state back to IDLE.
     pub fn reset(&mut self) {
         self.state = FsmState::Idle;
-        self.word_buffer.clear();
-    }
-
-    /// Add an exception word to the exception trie.
-    pub fn add_exception(&mut self, word: &str) {
-        self.exceptions.insert(word);
     }
 
     /// Get current FSM state (useful for diagnostics and testing).
@@ -211,14 +198,8 @@ impl HarfiyEngine {
 
     fn handle_special(&mut self, key: SpecialKey) -> KeyAction {
         match key {
-            SpecialKey::Backspace => {
-                if !self.word_buffer.is_empty() {
-                    self.word_buffer.pop();
-                }
-                self.state = FsmState::Idle;
-                KeyAction::PassThrough
-            }
-            SpecialKey::Escape
+            SpecialKey::Backspace
+            | SpecialKey::Escape
             | SpecialKey::Enter
             | SpecialKey::Tab
             | SpecialKey::ArrowLeft
@@ -240,18 +221,12 @@ impl HarfiyEngine {
     fn handle_char(&mut self, c: char) -> KeyAction {
         // Check if character is a word boundary delimiter
         if is_word_delimiter(c) {
-            self.word_buffer.clear();
             self.state = FsmState::Idle;
             return KeyAction::PassThrough;
         }
 
         match self.state {
             FsmState::Idle => {
-                if self.word_buffer.len() >= 64 {
-                    self.word_buffer.clear();
-                }
-                self.word_buffer.push(c);
-
                 if is_first_trigger(c, self.config.enable_ng) {
                     self.state = FsmState::WaitingForSecondChar { prev_char: c };
                 }
@@ -261,36 +236,17 @@ impl HarfiyEngine {
             FsmState::WaitingForSecondChar { prev_char } => {
                 // Check if (prev_char, c) forms a valid conversion rule
                 if let Some(rule) = match_rule(prev_char, c, self.config.enable_ng) {
-                    // Check exception trie for 'sh' / 'sH' exceptions
-                    if (prev_char == 's' || prev_char == 'S') && (c == 'h' || c == 'H') {
-                        // Candidate word contains all characters in current word buffer plus 'h'
-                        let mut candidate = self.word_buffer.clone();
-                        candidate.push(c);
-                        if self.exceptions.has_prefix_chars(&candidate) {
-                            // Match found in exception trie! Pass through without converting.
-                            self.word_buffer.push(c);
-                            self.state = FsmState::Idle;
-                            return KeyAction::PassThrough;
-                        }
-                    }
-
                     // Valid conversion:
                     let undo_str = get_original_pair_str(prev_char, c).unwrap_or(rule.replacement);
                     self.state = FsmState::JustTransformed {
                         undo_replacement: undo_str,
                     };
-                    self.word_buffer.clear();
                     KeyAction::Transform {
                         backspaces_count: 1,
                         replacement: rule.replacement,
                     }
                 } else {
                     // Does not form a pair with prev_char.
-                    if self.word_buffer.len() >= 64 {
-                        self.word_buffer.clear();
-                    }
-                    self.word_buffer.push(c);
-
                     // If 'c' is itself a first trigger, transition to WaitingForSecondChar(c)
                     if is_first_trigger(c, self.config.enable_ng) {
                         self.state = FsmState::WaitingForSecondChar { prev_char: c };
@@ -487,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exception_word_ishoq() {
+    fn test_always_converts_even_ishoq() {
         let mut engine = HarfiyEngine::default();
 
         // Type "Is"
@@ -499,25 +455,31 @@ mod tests {
             engine.process(InputEvent::Char('s')),
             KeyAction::PassThrough
         );
-        // Type 'h' -> "Ish" matches prefix of "Ishoq", so it MUST PassThrough!
+        // Type 'h' -> Always converts ('s' + 'h' -> 'ş')!
         assert_eq!(
             engine.process(InputEvent::Char('h')),
-            KeyAction::PassThrough
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ş",
+            }
         );
     }
 
     #[test]
-    fn test_exception_word_mushaf() {
+    fn test_always_converts_even_mushaf() {
         let mut engine = HarfiyEngine::default();
 
         // Type "mus"
         for c in ['m', 'u', 's'] {
             assert_eq!(engine.process(InputEvent::Char(c)), KeyAction::PassThrough);
         }
-        // Type 'h' -> "mush" matches prefix of "mushaf", so PassThrough!
+        // Type 'h' -> Always converts to 'ş'!
         assert_eq!(
             engine.process(InputEvent::Char('h')),
-            KeyAction::PassThrough
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ş",
+            }
         );
     }
 
@@ -525,7 +487,7 @@ mod tests {
     fn test_normal_word_shahar() {
         let mut engine = HarfiyEngine::default();
 
-        // Type 's' then 'h' at word start -> NOT an exception prefix, transforms to 'ş'
+        // Type 's' then 'h' at word start -> transforms to 'ş'
         assert_eq!(
             engine.process(InputEvent::Char('s')),
             KeyAction::PassThrough

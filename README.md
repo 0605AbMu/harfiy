@@ -18,8 +18,7 @@ harfiy/
 │   │   ├── src/
 │   │   │   ├── lib.rs
 │   │   │   ├── fsm.rs          # Finite State Machine (stack-based, Instant Undo)
-│   │   │   ├── rules.rs        # Konvertatsiya xaritalari va apostrof turlari
-│   │   │   └── trie.rs         # Istisnolar prefiks daraxti (Prefix Trie)
+│   │   │   └── rules.rs        # Konvertatsiya xaritalari va apostrof turlari
 │   │   └── tests/              # 100% qamrovli xotira testlari
 │   ├── platform/               # OS qatlamlari uchun interceptor va emitter trait'lari (harfiy-platform)
 │   │   ├── src/
@@ -58,10 +57,7 @@ harfiy/
 ### 2. ⚡ Instant Undo (Tezkor Bekor Qilish)
 Agar avto-konvertatsiyadan so'ng (`sh` -> `ş`) foydalanuvchi darhol `Backspace` tugmasini bossa, dvigatel `ş` ni o'chiradi va uning o'rniga asl kiritilgan juftlikni (`sh`) tiklaydi. Ikkinchi bosilgan `Backspace` odatdagi tarzda bitta harfni o'chiradi.
 
-### 3. 🌳 Istisnolar Mexanizmi (Radix/Prefix Trie)
-O'zbek tilida `s` va `h` alohida tovush sifatida o'qiladigan so'zlar (masalan: *Is-hoq*, *as-hob*, *mus-haf*, *ishol*) uchun dvigatel prefiks daraxti orqali tekshiradi va ularda `s + h` birikmasini almashtirmaydi (`PassThrough`).
-
-### 4. 🛡️ Klaviaturadagi Boshqa Tugmalar
+### 3. 🛡️ Klaviaturadagi Boshqa Tugmalar
 - `ArrowLeft`, `ArrowRight`, `Home`, `End`, `PageUp`, `PageDown`, `Escape`, `Enter`, `Tab` bosilganda FSM darhol `IDLE` holatiga qaytadi.
 - `Ctrl` yoki `Alt` kombinatsiyalari (`Ctrl+C`, `Ctrl+V`, `Ctrl+S` va h.k.) paytida dvigatel aralashmaydi va tizim buyruqlarini buzmaydi.
 
@@ -109,17 +105,6 @@ Dastur ishga tushganda avtomatik ravishda `config.toml` yaratiladi yoki yuklanad
 # Harfiy Konfiguratsiya Fayli
 enable_ng = false
 hotkey = "Ctrl+Shift+U"
-exceptions = [
-    "ishoq",
-    "is-hoq",
-    "is'hoq",
-    "ashob",
-    "as-hob",
-    "mushaf",
-    "mus-haf",
-    "ishol",
-    "mashad",
-]
 excluded_apps = []
 check_updates = true
 github_repo = "0605AbMu/harfiy"

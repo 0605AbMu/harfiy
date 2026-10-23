@@ -15,10 +15,6 @@ pub struct AppConfig {
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
 
-    /// List of custom exception words where 'sh' is kept separate
-    #[serde(default = "default_exceptions")]
-    pub exceptions: Vec<String>,
-
     /// Executable names where auto-conversion should be temporarily suspended
     #[serde(default = "default_excluded_apps")]
     pub excluded_apps: Vec<String>,
@@ -56,20 +52,6 @@ fn default_hotkey() -> String {
     "Ctrl+Shift+U".to_string()
 }
 
-fn default_exceptions() -> Vec<String> {
-    vec![
-        "ishoq".to_string(),
-        "is-hoq".to_string(),
-        "is'hoq".to_string(),
-        "ashob".to_string(),
-        "as-hob".to_string(),
-        "mushaf".to_string(),
-        "mus-haf".to_string(),
-        "ishol".to_string(),
-        "mashad".to_string(),
-    ]
-}
-
 fn default_excluded_apps() -> Vec<String> {
     vec![]
 }
@@ -79,7 +61,6 @@ impl Default for AppConfig {
         Self {
             enable_ng: default_enable_ng(),
             hotkey: default_hotkey(),
-            exceptions: default_exceptions(),
             excluded_apps: default_excluded_apps(),
             check_updates: default_check_updates(),
             update_url: default_update_url(),

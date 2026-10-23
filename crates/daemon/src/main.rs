@@ -20,7 +20,7 @@ use harfiy_platform::{pump_messages, KeyboardInterceptor, WindowsInterceptor};
 use harfiy_platform::{KeyboardInterceptor, MacOsInterceptor};
 #[cfg(target_os = "linux")]
 use harfiy_platform::{KeyboardInterceptor, LinuxInterceptor};
-use harfiy_tray::{TrayCommand, TrayController};
+use harfiy_tray::{StandaloneHotKey, TrayCommand, TrayController};
 
 use crate::config::AppConfig;
 use crate::updater::UpdateInfo;
@@ -135,14 +135,10 @@ fn run_daemon(no_tray: bool) {
     println!("Tezkor tugma: Ctrl + Shift + U");
 
     // Initialize engine
-    let mut engine_inner = HarfiyEngine::new(EngineConfig {
+    let engine_inner = HarfiyEngine::new(EngineConfig {
         enable_ng: app_config.enable_ng,
         enabled: true,
     });
-
-    for exc in &app_config.exceptions {
-        engine_inner.add_exception(exc);
-    }
 
     let engine = Arc::new(Mutex::new(engine_inner));
     let engine_hook = Arc::clone(&engine);
@@ -216,19 +212,19 @@ fn run_daemon(no_tray: bool) {
     let interceptor_thread = thread::spawn(|| {});
 
     // System Tray Controller
-    let mut tray_controller = if !no_tray {
-        match TrayController::new(true, current_ver) {
-            Ok(controller) => Some(controller),
+    let (mut tray_controller, standalone_hotkey) = if !no_tray {
+        match TrayController::new(true, current_ver, &app_config.hotkey) {
+            Ok(controller) => (Some(controller), None),
             Err(e) => {
                 eprintln!(
                     "Tizim paneli (System Tray) yaratilmadi: {}. Konsol rejimida davom etilmoqda.",
                     e
                 );
-                None
+                (None, StandaloneHotKey::new(&app_config.hotkey).ok())
             }
         }
     } else {
-        None
+        (None, StandaloneHotKey::new(&app_config.hotkey).ok())
     };
 
     struct UpdateEvent {
@@ -311,6 +307,19 @@ fn run_daemon(no_tray: bool) {
                         }
                     }
                 }
+            }
+        }
+
+        // Process standalone hotkey events (when running in headless/no-tray mode)
+        if let Some(shk) = &standalone_hotkey {
+            if shk.poll() {
+                let mut eng = engine.lock().unwrap();
+                let active = !eng.is_enabled();
+                eng.set_enabled(active);
+                println!(
+                    "Holat o'zgartirildi (Tezkor tugma): {}",
+                    if active { "Faol" } else { "To'xtatilgan" }
+                );
             }
         }
 

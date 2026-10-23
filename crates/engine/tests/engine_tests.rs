@@ -192,10 +192,10 @@ fn test_non_matching_keys_reset_undo() {
 }
 
 #[test]
-fn test_exceptions_and_delimiters() {
+fn test_delimiters_and_always_convert() {
     let mut engine = HarfiyEngine::default();
 
-    // Type "Salom " then "Ishoq"
+    // Type "Salom "
     for c in "Salom ".chars() {
         assert_eq!(engine.process(InputEvent::Char(c)), KeyAction::PassThrough);
     }
@@ -204,8 +204,14 @@ fn test_exceptions_and_delimiters() {
     assert_eq!(engine.process(InputEvent::Char('I')), KeyAction::PassThrough);
     assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
 
-    // Typing 'h' should NOT convert because "Ishoq" is an exception!
-    assert_eq!(engine.process(InputEvent::Char('h')), KeyAction::PassThrough);
+    // Typing 'h' ALWAYS converts!
+    assert_eq!(
+        engine.process(InputEvent::Char('h')),
+        KeyAction::Transform {
+            backspaces_count: 1,
+            replacement: "ş",
+        }
+    );
 
     // Remaining chars
     assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);

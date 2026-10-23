@@ -1,10 +1,12 @@
 //! System tray icon and global hotkey controller for Harfiy.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager};
+use tray_icon::menu::accelerator::Accelerator;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
@@ -44,19 +46,38 @@ pub struct TrayController {
     quit_item: MenuItem,
     is_active: Arc<AtomicBool>,
     has_update: Arc<AtomicBool>,
+    last_hotkey_press: Arc<Mutex<Instant>>,
 }
 
 impl TrayController {
-    /// Create and initialize the system tray icon, menu, and hotkey (Ctrl + Shift + U).
-    pub fn new(initial_active: bool, current_version: &str) -> Result<Self, TrayError> {
+    /// Create and initialize the system tray icon, menu, and hotkey.
+    pub fn new(
+        initial_active: bool,
+        current_version: &str,
+        hotkey_str: &str,
+    ) -> Result<Self, TrayError> {
         let is_active = Arc::new(AtomicBool::new(initial_active));
         let has_update = Arc::new(AtomicBool::new(false));
+        let last_hotkey_press = Arc::new(Mutex::new(
+            Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+        ));
+
+        // Parse accelerator for menu item hint
+        let accelerator: Option<Accelerator> = hotkey_str
+            .parse()
+            .ok()
+            .or_else(|| {
+                Some(Accelerator::new(
+                    Some(tray_icon::menu::accelerator::Modifiers::CONTROL | tray_icon::menu::accelerator::Modifiers::SHIFT),
+                    tray_icon::menu::accelerator::Code::KeyU,
+                ))
+            });
 
         // Create simplified, elegant tray menu items
         let tray_menu = Menu::new();
 
-        // 1. Active toggle checkbox
-        let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, None);
+        // 1. Active toggle checkbox with shortcut hint
+        let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, accelerator);
 
         // 2. Current version label
         let version_item = MenuItem::new(format!("Harfiy v{}", current_version), false, None);
@@ -83,16 +104,22 @@ impl TrayController {
 
         let tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
-            .with_tooltip(format!("Harfiy v{} - O'zbek Alifbosi", current_version))
+            .with_tooltip(format!(
+                "Harfiy v{} - O'zbek Alifbosi ({})",
+                current_version, hotkey_str
+            ))
             .with_icon(icon)
             .build()
             .map_err(|e| TrayError::TrayInit(e.to_string()))?;
 
-        // Setup Global Hotkey: Ctrl + Shift + U
+        // Setup Global Hotkey
         let hotkey_manager = GlobalHotKeyManager::new()
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let hotkey = HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU);
+        let hotkey: HotKey = hotkey_str
+            .parse()
+            .unwrap_or_else(|_| HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU));
+
         hotkey_manager
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
@@ -107,22 +134,47 @@ impl TrayController {
             quit_item,
             is_active,
             has_update,
+            last_hotkey_press,
         })
     }
 
     /// Check for tray menu or hotkey events (non-blocking).
     pub fn poll_events(&self) -> Option<TrayCommand> {
-        // Check global hotkey events
-        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if event.id == self.hotkey.id() && event.state == global_hotkey::HotKeyState::Released {
-                let new_state = !self.is_active.load(Ordering::SeqCst);
-                self.update_state(new_state);
-                return Some(TrayCommand::ToggleActive(new_state));
+        // Check global hotkey events (debounced 250ms for responsive, single toggle)
+        while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            if event.id == self.hotkey.id() {
+                let should_toggle = match event.state {
+                    global_hotkey::HotKeyState::Pressed => {
+                        let mut last = self.last_hotkey_press.lock().unwrap();
+                        if last.elapsed() >= Duration::from_millis(250) {
+                            *last = Instant::now();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    global_hotkey::HotKeyState::Released => {
+                        // Fallback in case Pressed was not delivered
+                        let mut last = self.last_hotkey_press.lock().unwrap();
+                        if last.elapsed() >= Duration::from_millis(250) {
+                            *last = Instant::now();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+
+                if should_toggle {
+                    let new_state = !self.is_active.load(Ordering::SeqCst);
+                    self.update_state(new_state);
+                    return Some(TrayCommand::ToggleActive(new_state));
+                }
             }
         }
 
         // Check menu item clicks
-        if let Ok(event) = MenuEvent::receiver().try_recv() {
+        while let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == self.active_item.id() {
                 let new_state = !self.is_active.load(Ordering::SeqCst);
                 self.update_state(new_state);
@@ -187,6 +239,69 @@ impl TrayController {
     /// Query the current active status.
     pub fn is_active(&self) -> bool {
         self.is_active.load(Ordering::SeqCst)
+    }
+}
+
+/// Standalone global hotkey listener for headless or non-tray mode.
+pub struct StandaloneHotKey {
+    _hotkey_manager: GlobalHotKeyManager,
+    hotkey: HotKey,
+    last_press: Mutex<Instant>,
+}
+
+impl StandaloneHotKey {
+    pub fn new(hotkey_str: &str) -> Result<Self, TrayError> {
+        let hotkey_manager = GlobalHotKeyManager::new()
+            .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
+
+        let hotkey: HotKey = hotkey_str
+            .parse()
+            .unwrap_or_else(|_| HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU));
+
+        hotkey_manager
+            .register(hotkey)
+            .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
+
+        Ok(Self {
+            _hotkey_manager: hotkey_manager,
+            hotkey,
+            last_press: Mutex::new(
+                Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+            ),
+        })
+    }
+
+    /// Poll for hotkey press events. Returns true if hotkey was triggered.
+    pub fn poll(&self) -> bool {
+        while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            if event.id == self.hotkey.id() {
+                let should_toggle = match event.state {
+                    global_hotkey::HotKeyState::Pressed => {
+                        let mut last = self.last_press.lock().unwrap();
+                        if last.elapsed() >= Duration::from_millis(250) {
+                            *last = Instant::now();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    global_hotkey::HotKeyState::Released => {
+                        let mut last = self.last_press.lock().unwrap();
+                        if last.elapsed() >= Duration::from_millis(250) {
+                            *last = Instant::now();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+
+                if should_toggle {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

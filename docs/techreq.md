@@ -16,8 +16,7 @@ harfiy/
 │   │   ├── src/
 │   │   │   ├── lib.rs
 │   │   │   ├── fsm.rs          # Finite State Machine
-│   │   │   ├── rules.rs        # Konvertatsiya xaritalari
-│   │   │   └── trie.rs         # Istisnolar prefiks daraxti
+│   │   │   └── rules.rs        # Konvertatsiya xaritalari
 │   │   └── tests/
 │   ├── platform/               # OS qatlamlari uchun umumiy trait va implementatsiyalar
 │   │   ├── src/
@@ -109,11 +108,9 @@ Holatlar mashinasi har bir kiritilgan `char` va uning modifikatorlarini tahlil q
 
 *Navigatsiya tugmalari (`ArrowLeft`, `ArrowRight`, `Home`, `End`), `Escape`, `Enter`, `Tab`, `Backspace` bosilganda FSM darhol `IDLE` holatiga qaytariladi va ichki bufer tozalanadi.*
 
-### 2.4. Istisnolar Mexanizmi (Trie Lookup)
+### 2.4. Instant Undo
 
-O'zbek tilida `s` va `h` alohida talaffuz qilinadigan so'zlar (masalan: *Is-hoq*, *as-hob*, *mus-haf*) uchun dvigatel xotirasida static prefiks daraxti (Radix Trie) saqlanadi:
-* Agar foydalanuvchi ajratuvchi belgidan (masalan, bo'sh joy) so'ng istisno so'zning prefiksini yozayotgan bo'lsa, `s + h` juftligi kelganda almashtirish to'xtatiladi (`KeyAction::PassThrough`).
-* **Instant Undo:** Agar foydalanuvchi avto-konvertatsiyadan so'ng darhol `Backspace` tugmasini bossa, `ş` o'chiriladi va o'rniga asl kiritilgan juftlik (`sh`) qayta tiklanadi.
+* **Instant Undo:** Agar foydalanuvchi avto-konvertatsiyadan so'ng darhol `Backspace` tugmasini bossa, `ş` o'chiriladi va o'rniga asl kiritilgan juftlik (`sh`) qayta tiklanadi. Ikkinchi bosilgan `Backspace` odatdagi tarzda bitta harfni o'chiradi.
 
 ---
 
