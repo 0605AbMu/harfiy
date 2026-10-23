@@ -284,7 +284,7 @@ impl TrayController {
         // 3. Option checkboxes
         let ng_item = CheckMenuItem::new("'ng' -> 'ñ' qoidasi", true, initial_ng, None);
         let autostart_item = CheckMenuItem::new("Windows bilan ishga tushish", true, initial_autostart, None);
-        let game_mode_item = CheckMenuItem::new("O'yin rejimi (To'liq ekran)", true, initial_game_mode, None);
+        let game_mode_item = CheckMenuItem::new("O'yinlarda avtomatik pauza", true, initial_game_mode, None);
 
         // 4. Excluded apps submenu (clean text)
         let excluded_submenu = Submenu::new("Istisno dasturlar", true);

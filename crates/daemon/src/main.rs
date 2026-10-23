@@ -491,10 +491,10 @@ fn run_daemon(no_tray: bool) {
                         let _ = app_config.save();
                         harfiy_platform::set_game_mode(enabled);
                         harfiy_platform::show_custom_hud(
-                            if enabled { "O'yin rejimi yoqildi" } else { "O'yin rejimi o'chirildi" },
+                            if enabled { "O'yinlarda avtomatik pauza yoqildi" } else { "O'yinlarda avtomatik pauza o'chirildi" },
                             true,
                         );
-                        println!("O'yin rejimi (Fullscreen): {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                        println!("O'yinlarda avtomatik pauza: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
                     }
                     TrayCommand::ClearStats => {
                         conversions_counter.store(0, Ordering::SeqCst);
