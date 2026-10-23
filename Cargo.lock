@@ -677,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-daemon"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -694,11 +694,11 @@ dependencies = [
 
 [[package]]
 name = "harfiy-engine"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "harfiy-platform"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "harfiy-engine",
  "libc",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-tray"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "global-hotkey",
  "harfiy-engine",

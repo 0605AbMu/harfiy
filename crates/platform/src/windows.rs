@@ -2,17 +2,24 @@
 
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::time::Instant;
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+    BOOL, CloseHandle, GetLastError, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW,
     EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn,
     DT_CENTER, DT_SINGLELINE, DT_VCENTER, HBRUSH, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
 };
-use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
+use windows::Win32::System::Threading::{
+    CreateMutexW, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+    PROCESS_QUERY_LIMITED_INFORMATION,
+};
+use windows::Win32::UI::Controls::Dialogs::{
+    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
     INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
@@ -21,8 +28,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetMessageW, GetSystemMetrics, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
+    CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows,
+    GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindowTextLengthW,
+    GetWindowThreadProcessId, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
     PostQuitMessage, PostThreadMessageW, RegisterClassW, SetLayeredWindowAttributes, SetTimer,
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES,
     KBDLLHOOKSTRUCT, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG,
@@ -114,11 +122,13 @@ pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
 
 static HUD_HWND: AtomicIsize = AtomicIsize::new(0);
 static HUD_ACTIVE: AtomicBool = AtomicBool::new(true);
+static HUD_CUSTOM_MESSAGE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
 const WM_HUD_UPDATE: u32 = WM_APP + 1;
 
 /// Show or update a modern, native floating status HUD indicator on Windows.
 pub fn show_status_hud(active: bool) {
+    *HUD_CUSTOM_MESSAGE.lock().unwrap() = None;
     HUD_ACTIVE.store(active, Ordering::SeqCst);
     let hwnd_raw = HUD_HWND.load(Ordering::SeqCst);
     if hwnd_raw != 0 {
@@ -132,15 +142,33 @@ pub fn show_status_hud(active: bool) {
         }
     } else {
         std::thread::spawn(move || {
-            run_hud_window(active);
+            run_hud_window();
         });
     }
 }
 
-fn run_hud_window(initial_active: bool) {
-    use windows::core::w;
+/// Show a custom floating notification HUD with green/gray indicator dot.
+pub fn show_custom_hud(message: &str, is_success: bool) {
+    *HUD_CUSTOM_MESSAGE.lock().unwrap() = Some((message.to_string(), is_success));
+    let hwnd_raw = HUD_HWND.load(Ordering::SeqCst);
+    if hwnd_raw != 0 {
+        unsafe {
+            let _ = PostMessageW(
+                HWND(hwnd_raw as *mut _),
+                WM_HUD_UPDATE,
+                WPARAM(if is_success { 1 } else { 0 }),
+                LPARAM(0),
+            );
+        }
+    } else {
+        std::thread::spawn(move || {
+            run_hud_window();
+        });
+    }
+}
 
-    HUD_ACTIVE.store(initial_active, Ordering::SeqCst);
+fn run_hud_window() {
+    use windows::core::w;
 
     unsafe {
         let class_name = w!("HarfiyStatusHUD");
@@ -153,7 +181,7 @@ fn run_hud_window(initial_active: bool) {
 
         let _ = RegisterClassW(&wnd_class);
 
-        let width = 230;
+        let width = 280;
         let height = 44;
         let screen_w = GetSystemMetrics(SM_CXSCREEN);
         let x = (screen_w - width) / 2;
@@ -210,9 +238,6 @@ unsafe extern "system" fn hud_wnd_proc(
 ) -> LRESULT {
     match msg {
         WM_HUD_UPDATE => {
-            let active = wparam.0 != 0;
-            HUD_ACTIVE.store(active, Ordering::SeqCst);
-            // Reset 1.1s auto-close timer and repaint
             let _ = SetTimer(hwnd, 1, 1100, None);
             let _ = InvalidateRect(hwnd, None, true);
             LRESULT(0)
@@ -226,14 +251,12 @@ unsafe extern "system" fn hud_wnd_proc(
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
 
-            let active = HUD_ACTIVE.load(Ordering::SeqCst);
-
             // Dark sleek slate background: RGB(28, 30, 36) -> 0x00241E1C
             let bg_brush = CreateSolidBrush(COLORREF(0x00241E1C));
             let mut rect = RECT {
                 left: 0,
                 top: 0,
-                right: 230,
+                right: 280,
                 bottom: 44,
             };
             FillRect(hdc, &rect, bg_brush);
@@ -245,7 +268,7 @@ unsafe extern "system" fn hud_wnd_proc(
             // Create modern Segoe UI font
             use windows::core::w;
             let font = CreateFontW(
-                -17,
+                -16,
                 0,
                 0,
                 0,
@@ -262,13 +285,20 @@ unsafe extern "system" fn hud_wnd_proc(
             );
             let old_font = SelectObject(hdc, HGDIOBJ(font.0 as *mut _));
 
-            // Status message and color:
-            // Active: Green dot RGB(34, 197, 94) -> 0x005EC522
-            // Paused: Gray dot RGB(156, 163, 175) -> 0x00AFA39C
-            let (indicator, status_text, color) = if active {
-                ("●", "Harfiy: Faol", COLORREF(0x005EC522))
+            let custom_opt = HUD_CUSTOM_MESSAGE.lock().unwrap().clone();
+            let (indicator, status_text, color) = if let Some((msg, ok)) = custom_opt {
+                if ok {
+                    ("●", msg, COLORREF(0x005EC522))
+                } else {
+                    ("●", msg, COLORREF(0x00AFA39C))
+                }
             } else {
-                ("●", "Harfiy: To'xtatildi", COLORREF(0x00AFA39C))
+                let active = HUD_ACTIVE.load(Ordering::SeqCst);
+                if active {
+                    ("●", "Harfiy: Faol".to_string(), COLORREF(0x005EC522))
+                } else {
+                    ("●", "Harfiy: To'xtatildi".to_string(), COLORREF(0x00AFA39C))
+                }
             };
 
             let full_text = format!("{}  {}", indicator, status_text);
@@ -295,6 +325,159 @@ unsafe extern "system" fn hud_wnd_proc(
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
+}
+
+static EXCLUDED_APPS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static CACHED_FG_STATUS: Mutex<Option<(isize, bool, Instant)>> = Mutex::new(None);
+
+/// Update the active list of excluded applications.
+pub fn set_excluded_apps(apps: &[String]) {
+    let mut list = EXCLUDED_APPS.lock().unwrap();
+    *list = apps.iter().map(|s| s.to_lowercase()).collect();
+    let mut cache = CACHED_FG_STATUS.lock().unwrap();
+    *cache = None;
+}
+
+/// Check if the currently focused foreground window belongs to an excluded application.
+pub fn is_current_app_excluded() -> bool {
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0.is_null() {
+        return false;
+    }
+    let fg_raw = fg.0 as isize;
+
+    {
+        let cache = CACHED_FG_STATUS.lock().unwrap();
+        if let Some((cached_hwnd, excluded, instant)) = *cache {
+            if cached_hwnd == fg_raw && instant.elapsed() < std::time::Duration::from_millis(200) {
+                return excluded;
+            }
+        }
+    }
+
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(fg, Some(&mut pid)) };
+    let mut is_excluded = false;
+    if pid != 0 && pid != std::process::id() {
+        if let Some(exe) = get_process_name_by_pid(pid) {
+            let exe_lower = exe.to_lowercase();
+            let guard = EXCLUDED_APPS.lock().unwrap();
+            is_excluded = guard.iter().any(|app| app == &exe_lower);
+        }
+    }
+
+    let mut cache = CACHED_FG_STATUS.lock().unwrap();
+    *cache = Some((fg_raw, is_excluded, Instant::now()));
+
+    is_excluded
+}
+
+/// Retrieve the executable file name for a process ID.
+pub fn get_process_name_by_pid(pid: u32) -> Option<String> {
+    use windows::core::PWSTR;
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buffer = [0u16; 1024];
+        let mut size = buffer.len() as u32;
+        let res = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_FORMAT(0),
+            PWSTR(buffer.as_mut_ptr()),
+            &mut size,
+        );
+        let _ = CloseHandle(handle);
+
+        if res.is_ok() && size > 0 {
+            let path_str = String::from_utf16_lossy(&buffer[..size as usize]);
+            let path = std::path::Path::new(&path_str);
+            return path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
+/// Scan for active running GUI desktop applications with open windows.
+pub fn scan_running_apps() -> Vec<String> {
+    let mut apps: Vec<String> = Vec::new();
+    let apps_ptr = &mut apps as *mut Vec<String>;
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                return BOOL(1);
+            }
+            let len = GetWindowTextLengthW(hwnd);
+            if len == 0 {
+                return BOOL(1);
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == 0 || pid == std::process::id() {
+                return BOOL(1);
+            }
+            if let Some(exe_name) = get_process_name_by_pid(pid) {
+                let exe_lower = exe_name.to_lowercase();
+                if !matches!(
+                    exe_lower.as_str(),
+                    "harfiy.exe"
+                        | "shellexperiencehost.exe"
+                        | "searchhost.exe"
+                        | "startmenuexperiencehost.exe"
+                        | "textinputhost.exe"
+                        | "applicationframehost.exe"
+                        | "systemsettings.exe"
+                        | "explorer.exe"
+                ) {
+                    let apps = &mut *(lparam.0 as *mut Vec<String>);
+                    if !apps.contains(&exe_lower) {
+                        apps.push(exe_lower);
+                    }
+                }
+            }
+            BOOL(1)
+        }
+    }
+
+    unsafe {
+        let _ = EnumWindows(Some(enum_proc), LPARAM(apps_ptr as isize));
+    }
+
+    apps.sort();
+    apps
+}
+
+/// Open native Windows file selection dialog (Explorer) to pick an executable file (.exe).
+pub fn pick_executable_dialog() -> Option<String> {
+    use windows::core::{w, PWSTR};
+
+    let mut file_buf = [0u16; 1024];
+    let filter = w!("Dasturlar (*.exe)\0*.exe\0Barcha fayllar (*.*)\0*.*\0\0");
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        lpstrFilter: filter,
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST,
+        lpstrTitle: w!("Harfiy - Istisno dasturni tanlang (.exe)"),
+        ..Default::default()
+    };
+
+    unsafe {
+        if GetOpenFileNameW(&mut ofn).as_bool() {
+            let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+            let path_str = String::from_utf16_lossy(&file_buf[..len]);
+            let path = std::path::Path::new(&path_str);
+            if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+                return Some(file_name.to_lowercase());
+            }
+        }
+    }
+    None
 }
 
 /// Global state held during the active keyboard hook.
@@ -624,6 +807,11 @@ unsafe extern "system" fn low_level_keyboard_proc(
 
     // Do not interfere with Ctrl or Alt combinations (e.g. Ctrl+S, Ctrl+C)
     if is_control_or_alt_down() {
+        return CallNextHookEx(None, n_code, w_param, l_param);
+    }
+
+    // Do not interfere if the active foreground window belongs to an excluded application
+    if is_current_app_excluded() {
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
 

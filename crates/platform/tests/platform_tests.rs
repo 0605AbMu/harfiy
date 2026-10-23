@@ -104,3 +104,13 @@ fn test_windows_interceptor_graceful_stop() {
     let elapsed = sw.elapsed();
     assert!(elapsed < std::time::Duration::from_millis(500), "Stop took too long: {:?}", elapsed);
 }
+
+#[cfg(windows)]
+#[test]
+fn test_excluded_apps_management() {
+    let apps = vec!["code.exe".to_string(), "notepad.exe".to_string()];
+    harfiy_platform::set_excluded_apps(&apps);
+    // Running apps scan returns non-empty list on desktop or at least does not crash
+    let running = harfiy_platform::scan_running_apps();
+    println!("Scanned running GUI apps count: {}", running.len());
+}

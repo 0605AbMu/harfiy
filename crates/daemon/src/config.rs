@@ -109,4 +109,32 @@ impl AppConfig {
 
         (default_cfg, path)
     }
+
+    /// Save current configuration back to disk.
+    pub fn save(&self) -> Result<(), std::io::Error> {
+        let path = Self::resolve_path();
+        if let Ok(serialized) = toml::to_string_pretty(self) {
+            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/0605AbMu/harfiy\n\n";
+            let full_text = format!("{}{}", header, serialized);
+            fs::write(path, full_text)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_serialization_with_excluded_apps() {
+        let mut cfg = AppConfig::default();
+        cfg.excluded_apps = vec!["code.exe".to_string(), "telegram.exe".to_string()];
+        let serialized = toml::to_string_pretty(&cfg).unwrap();
+        assert!(serialized.contains("code.exe"));
+        assert!(serialized.contains("telegram.exe"));
+
+        let deserialized: AppConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.excluded_apps, vec!["code.exe", "telegram.exe"]);
+    }
 }

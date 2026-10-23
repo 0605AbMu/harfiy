@@ -123,8 +123,11 @@ fn run_daemon(no_tray: bool) {
         }
     };
 
-    let (app_config, config_path) = AppConfig::load_or_create();
+    let (mut app_config, config_path) = AppConfig::load_or_create();
     let current_ver = env!("CARGO_PKG_VERSION");
+
+    harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
+    let mut running_apps = harfiy_platform::scan_running_apps();
 
     println!("Harfiy v{} faollashtirilmoqda...", current_ver);
     println!("Sozlamalar fayli: {}", config_path.display());
@@ -213,7 +216,13 @@ fn run_daemon(no_tray: bool) {
 
     // System Tray Controller
     let (mut tray_controller, standalone_hotkey) = if !no_tray {
-        match TrayController::new(true, current_ver, &app_config.hotkey) {
+        match TrayController::new(
+            true,
+            current_ver,
+            &app_config.hotkey,
+            &app_config.excluded_apps,
+            &running_apps,
+        ) {
             Ok(controller) => (Some(controller), None),
             Err(e) => {
                 eprintln!(
@@ -252,10 +261,24 @@ fn run_daemon(no_tray: bool) {
 
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
 
+    let mut last_scan = std::time::Instant::now();
+
     // Main event loop
     while is_running.load(Ordering::SeqCst) {
         #[cfg(windows)]
         pump_messages();
+
+        // Periodically refresh running applications list for tray menu
+        if last_scan.elapsed() >= Duration::from_secs(5) {
+            last_scan = std::time::Instant::now();
+            let new_running = harfiy_platform::scan_running_apps();
+            if new_running != running_apps {
+                running_apps = new_running;
+                if let Some(tray) = &tray_controller {
+                    tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
+                }
+            }
+        }
 
         // Process asynchronous update notifications
         if let Ok(event) = rx_update.try_recv() {
@@ -372,6 +395,70 @@ fn run_daemon(no_tray: bool) {
                         println!("Tizim panelidan chiqish buyrug'i berildi.");
                         is_running.store(false, Ordering::SeqCst);
                         break;
+                    }
+                    TrayCommand::PickExcludedAppExplorer => {
+                        if let Some(picked) = harfiy_platform::pick_executable_dialog() {
+                            let picked_lower = picked.to_lowercase();
+                            if !app_config
+                                .excluded_apps
+                                .iter()
+                                .any(|a| a.to_lowercase() == picked_lower)
+                            {
+                                app_config.excluded_apps.push(picked_lower.clone());
+                                let _ = app_config.save();
+                                harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
+                                running_apps = harfiy_platform::scan_running_apps();
+                                tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
+                                harfiy_platform::show_custom_hud(
+                                    &format!("Istisno qo'shildi: {}", picked_lower),
+                                    true,
+                                );
+                                println!("Istisno dastur qo'shildi: {}", picked_lower);
+                            } else {
+                                harfiy_platform::show_custom_hud(
+                                    &format!("Allaqachon mavjud: {}", picked_lower),
+                                    false,
+                                );
+                            }
+                        }
+                    }
+                    TrayCommand::AddExcludedApp(app) => {
+                        let app_lower = app.to_lowercase();
+                        if !app_config
+                            .excluded_apps
+                            .iter()
+                            .any(|a| a.to_lowercase() == app_lower)
+                        {
+                            app_config.excluded_apps.push(app_lower.clone());
+                            let _ = app_config.save();
+                            harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
+                            running_apps = harfiy_platform::scan_running_apps();
+                            tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
+                            harfiy_platform::show_custom_hud(
+                                &format!("Istisno qo'shildi: {}", app_lower),
+                                true,
+                            );
+                            println!("Istisno dastur qo'shildi: {}", app_lower);
+                        }
+                    }
+                    TrayCommand::RemoveExcludedApp(app) => {
+                        let app_lower = app.to_lowercase();
+                        if let Some(pos) = app_config
+                            .excluded_apps
+                            .iter()
+                            .position(|a| a.to_lowercase() == app_lower)
+                        {
+                            app_config.excluded_apps.remove(pos);
+                            let _ = app_config.save();
+                            harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
+                            running_apps = harfiy_platform::scan_running_apps();
+                            tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
+                            harfiy_platform::show_custom_hud(
+                                &format!("Istisno olib tashlandi: {}", app_lower),
+                                true,
+                            );
+                            println!("Istisno dasturlardan olib tashlandi: {}", app_lower);
+                        }
                     }
                 }
             }

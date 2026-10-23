@@ -64,9 +64,10 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
 pub use self::windows::{
-    acquire_single_instance_lock, attach_parent_console, pump_messages, show_confirm_dialog,
-    show_info_dialog, show_status_hud, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor,
-    HARFIY_MAGIC_FLAG,
+    acquire_single_instance_lock, attach_parent_console, is_current_app_excluded,
+    pick_executable_dialog, pump_messages, scan_running_apps, set_excluded_apps,
+    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, SingleInstanceGuard,
+    WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(not(windows))]
@@ -90,6 +91,29 @@ pub fn show_status_hud(active: bool) {
     } else {
         println!("[HUD] Harfiy: To'xtatildi");
     }
+}
+
+#[cfg(not(windows))]
+pub fn show_custom_hud(message: &str, _is_success: bool) {
+    println!("[HUD] {}", message);
+}
+
+#[cfg(not(windows))]
+pub fn pick_executable_dialog() -> Option<String> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn scan_running_apps() -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn set_excluded_apps(_apps: &[String]) {}
+
+#[cfg(not(windows))]
+pub fn is_current_app_excluded() -> bool {
+    false
 }
 
 #[cfg(target_os = "macos")]

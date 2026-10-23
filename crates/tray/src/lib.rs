@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager};
 use tray_icon::menu::accelerator::Accelerator;
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{
+    CheckMenuItem, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
+};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 // Embedded high-quality official Harfiy icons in 32x32 RGBA
@@ -33,6 +35,91 @@ pub enum TrayCommand {
     CheckUpdates,
     DownloadUpdate,
     Quit,
+    PickExcludedAppExplorer,
+    AddExcludedApp(String),
+    RemoveExcludedApp(String),
+}
+
+/// Remove all existing items from a Submenu.
+fn clear_submenu(submenu: &Submenu) {
+    for it in submenu.items() {
+        match it {
+            MenuItemKind::MenuItem(i) => {
+                let _ = submenu.remove(&i);
+            }
+            MenuItemKind::Submenu(s) => {
+                let _ = submenu.remove(&s);
+            }
+            MenuItemKind::Predefined(p) => {
+                let _ = submenu.remove(&p);
+            }
+            MenuItemKind::Check(c) => {
+                let _ = submenu.remove(&c);
+            }
+            MenuItemKind::Icon(ic) => {
+                let _ = submenu.remove(&ic);
+            }
+        }
+    }
+}
+
+/// Populate the excluded apps submenu with explorer picker, running apps, and active exclusions.
+pub fn populate_excluded_submenu(
+    submenu: &Submenu,
+    excluded_apps: &[String],
+    running_apps: &[String],
+) {
+    clear_submenu(submenu);
+
+    // 1. Pick via Native Windows Explorer
+    let pick_item = MenuItem::with_id(
+        "pick_explorer",
+        "📂 Fayldan tanlash (.exe)...",
+        true,
+        None,
+    );
+    let _ = submenu.append(&pick_item);
+
+    // 2. Running apps submenu
+    let running_sub = Submenu::new("📱 Ishlayotgan dasturlar", true);
+    let mut added_any = false;
+    for app in running_apps {
+        let app_lower = app.to_lowercase();
+        if !excluded_apps.iter().any(|e| e.to_lowercase() == app_lower) {
+            let item = MenuItem::with_id(
+                format!("add_running:{}", app_lower),
+                format!("➕ {}", app),
+                true,
+                None,
+            );
+            let _ = running_sub.append(&item);
+            added_any = true;
+        }
+    }
+    if !added_any {
+        let empty_item = MenuItem::new("(Boshqa dastur topilmadi)", false, None);
+        let _ = running_sub.append(&empty_item);
+    }
+    let _ = submenu.append(&running_sub);
+
+    // 3. Separator
+    let _ = submenu.append(&PredefinedMenuItem::separator());
+
+    // 4. Current Excluded Apps list
+    if excluded_apps.is_empty() {
+        let empty_item = MenuItem::new("ℹ️ Istisnolar yo'q (barcha joyda faol)", false, None);
+        let _ = submenu.append(&empty_item);
+    } else {
+        for app in excluded_apps {
+            let item = MenuItem::with_id(
+                format!("remove_excluded:{}", app.to_lowercase()),
+                format!("❌ {} (Olib tashlash)", app),
+                true,
+                None,
+            );
+            let _ = submenu.append(&item);
+        }
+    }
 }
 
 /// System tray and hotkey manager.
@@ -41,6 +128,7 @@ pub struct TrayController {
     _hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
     active_item: CheckMenuItem,
+    excluded_submenu: Submenu,
     _version_item: MenuItem,
     update_item: MenuItem,
     quit_item: MenuItem,
@@ -55,6 +143,8 @@ impl TrayController {
         initial_active: bool,
         current_version: &str,
         hotkey_str: &str,
+        excluded_apps: &[String],
+        running_apps: &[String],
     ) -> Result<Self, TrayError> {
         let is_active = Arc::new(AtomicBool::new(initial_active));
         let has_update = Arc::new(AtomicBool::new(false));
@@ -79,18 +169,23 @@ impl TrayController {
         // 1. Active toggle checkbox with shortcut hint
         let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, accelerator);
 
-        // 2. Current version label
+        // 2. Excluded apps submenu
+        let excluded_submenu = Submenu::new("🚫 Istisno dasturlar", true);
+        populate_excluded_submenu(&excluded_submenu, excluded_apps, running_apps);
+
+        // 3. Current version label
         let version_item = MenuItem::new(format!("Harfiy v{}", current_version), false, None);
 
-        // 3. Dynamic single update item
+        // 4. Dynamic single update item
         let update_item = MenuItem::new("Yangilanishlarni tekshirish", true, None);
 
-        // 4. Quit item
+        // 5. Quit item
         let quit_item = MenuItem::new("Chiqish", true, None);
 
         tray_menu
             .append_items(&[
                 &active_item,
+                &excluded_submenu,
                 &PredefinedMenuItem::separator(),
                 &version_item,
                 &update_item,
@@ -129,6 +224,7 @@ impl TrayController {
             _hotkey_manager: hotkey_manager,
             hotkey,
             active_item,
+            excluded_submenu,
             _version_item: version_item,
             update_item,
             quit_item,
@@ -187,10 +283,24 @@ impl TrayController {
                 }
             } else if event.id == self.quit_item.id() {
                 return Some(TrayCommand::Quit);
+            } else {
+                let id_str = event.id.as_ref();
+                if id_str == "pick_explorer" {
+                    return Some(TrayCommand::PickExcludedAppExplorer);
+                } else if let Some(app) = id_str.strip_prefix("remove_excluded:") {
+                    return Some(TrayCommand::RemoveExcludedApp(app.to_string()));
+                } else if let Some(app) = id_str.strip_prefix("add_running:") {
+                    return Some(TrayCommand::AddExcludedApp(app.to_string()));
+                }
             }
         }
 
         None
+    }
+
+    /// Update the excluded apps submenu dynamically.
+    pub fn update_excluded_apps(&self, excluded_apps: &[String], running_apps: &[String]) {
+        populate_excluded_submenu(&self.excluded_submenu, excluded_apps, running_apps);
     }
 
     /// Update tray menu when a new version is discovered.
@@ -315,4 +425,23 @@ fn get_app_icon(active: bool) -> Result<Icon, TrayError> {
     };
 
     Icon::from_rgba(bytes.to_vec(), SIZE, SIZE).map_err(|e| TrayError::IconError(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_populate_excluded_submenu() {
+        let sub = Submenu::new("Istisno dasturlar", true);
+        let excluded = vec!["code.exe".to_string()];
+        let running = vec!["code.exe".to_string(), "telegram.exe".to_string()];
+
+        populate_excluded_submenu(&sub, &excluded, &running);
+        assert!(!sub.items().is_empty());
+
+        // Re-populating with empty excluded list
+        populate_excluded_submenu(&sub, &[], &running);
+        assert!(!sub.items().is_empty());
+    }
 }
