@@ -107,10 +107,10 @@ enable_ng = false
 hotkey = "Ctrl+Shift+U"
 excluded_apps = []
 check_updates = true
-github_repo = "0605AbMu/harfiy"
+github_repo = "0605AbMu/harfiy-release"
 ```
 
-Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)**
+Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/releases)**
 
 ---
 

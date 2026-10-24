@@ -51,6 +51,7 @@ enum Commands {
     /// Stop running daemon instance
     Stop,
     /// Check for updates from GitHub Releases
+    #[command(alias = "update")]
     CheckUpdates,
 }
 
@@ -89,20 +90,33 @@ fn main() {
 fn run_check_updates_cli() {
     let (cfg, _) = AppConfig::load_or_create();
     let current_ver = env!("CARGO_PKG_VERSION");
-    println!("Harfiy v{} - Yangilanishlar tekshirilmoqda...", current_ver);
-    println!("Yangilanish serveri: {}", cfg.update_url);
+    println!("Harfiy v{} - GitHub Releases orqali yangilanishlar tekshirilmoqda...", current_ver);
+    println!("GitHub repozitoriysi: {}", cfg.github_repo);
 
-    match updater::check_for_updates(&cfg.update_url, &cfg.github_repo) {
+    match updater::check_for_updates(&cfg.github_repo) {
         Ok(info) => {
             println!("Joriy versiya: v{}", info.current_version);
             println!("Eng so'nggi versiya: v{}", info.latest_version);
             if info.has_update {
                 println!("\n⭐ Yangi versiya mavjud: v{}!", info.latest_version);
                 println!("Yuklab olish havolasi: {}", info.release_url);
-                println!("Brauzerda ochish uchun Enter bosing...");
+                println!("Dasturni o'z-o'zidan yangilashni xohlaysizmi? (h/y)");
                 let mut buf = String::new();
                 let _ = std::io::stdin().read_line(&mut buf);
-                let _ = open::that(&info.release_url);
+                let choice = buf.trim().to_lowercase();
+                if choice == "h" || choice == "ha" || choice == "y" || choice == "yes" {
+                    println!("Yangilanish yuklab olinmoqda va o'rnatilmoqda...");
+                    match updater::perform_self_update(&cfg.github_repo, true) {
+                        Ok(new_ver) => {
+                            println!("✅ Harfiy muvaffaqiyatli v{} versiyasiga yangilandi!", new_ver);
+                        }
+                        Err(e) => {
+                            eprintln!("Yangilashda xatolik: {}", e);
+                            println!("Brauzerda yuklab olish sahifasi ochilmoqda...");
+                            let _ = open::that(&info.release_url);
+                        }
+                    }
+                }
             } else {
                 println!("\n✅ Siz eng so'nggi versiyadan foydalanmoqdasiz.");
             }
@@ -323,11 +337,10 @@ fn run_daemon(no_tray: bool) {
 
     // Trigger initial background update check if enabled
     if app_config.check_updates {
-        let update_url = app_config.update_url.clone();
         let repo = app_config.github_repo.clone();
         let tx = tx_update.clone();
         thread::spawn(move || {
-            let res = updater::check_for_updates(&update_url, &repo);
+            let res = updater::check_for_updates(&repo);
             let _ = tx.send(UpdateEvent {
                 result: res,
                 is_manual: false,
@@ -343,6 +356,9 @@ fn run_daemon(no_tray: bool) {
     while is_running.load(Ordering::SeqCst) {
         #[cfg(windows)]
         pump_messages();
+
+        #[cfg(target_os = "macos")]
+        harfiy_tray::pump_macos_events();
 
         // Periodically refresh running applications list for tray menu
         if last_scan.elapsed() >= Duration::from_secs(5) {
@@ -368,13 +384,24 @@ fn run_daemon(no_tray: bool) {
 
                             if event.is_manual {
                                 let msg = format!(
-                                    "Harfiy dasturining yangi versiyasi mavjud!\n\nJoriy versiya: v{}\nYangi versiya: v{}\n\nYuklab olish sahifasini ochishni xohlaysizmi?",
+                                    "Harfiy dasturining yangi versiyasi mavjud!\n\nJoriy versiya: v{}\nYangi versiya: v{}\n\nIlovani hoziroq yangilashni xohlaysizmi?",
                                     info.current_version, info.latest_version
                                 );
+                                let repo_clone = app_config.github_repo.clone();
                                 let download_url = info.release_url.clone();
                                 thread::spawn(move || {
                                     if harfiy_platform::show_confirm_dialog("Harfiy - Yangilanish mavjud", &msg) {
-                                        let _ = open::that(&download_url);
+                                        harfiy_platform::show_custom_hud("Yangilanish yuklab olinmoqda...", true);
+                                        match updater::perform_self_update(&repo_clone, false) {
+                                            Ok(new_ver) => {
+                                                harfiy_platform::show_custom_hud(&format!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver), true);
+                                                println!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver);
+                                            }
+                                            Err(e) => {
+                                                eprintln!("Yangilashda xatolik: {}. Sahifa ochilmoqda...", e);
+                                                let _ = open::that(&download_url);
+                                            }
+                                        }
                                     }
                                 });
                             }
@@ -480,11 +507,9 @@ fn run_daemon(no_tray: bool) {
                     }
                     TrayCommand::ToggleAutostart(enabled) => {
                         let _ = harfiy_platform::set_autostart(enabled);
-                        harfiy_platform::show_custom_hud(
-                            if enabled { "Windows bilan ishga tushish yoqildi" } else { "Windows bilan ishga tushish o'chirildi" },
-                            true,
-                        );
-                        println!("Windows bilan ishga tushish: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                        let hud_msg = format!("Avtomatik ishga tushish {}", if enabled { "yoqildi" } else { "o'chirildi" });
+                        harfiy_platform::show_custom_hud(&hud_msg, true);
+                        println!("Avtomatik ishga tushish: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
                     }
                     TrayCommand::ToggleGameMode(enabled) => {
                         app_config.game_mode = enabled;
@@ -507,14 +532,13 @@ fn run_daemon(no_tray: bool) {
                         println!("Statistika tozalandi.");
                     }
                     TrayCommand::CheckUpdates => {
-                        println!("Yangilanishlar tekshirilmoqda...");
+                        println!("GitHub Releases orqali yangilanishlar tekshirilmoqda...");
                         tray.set_checking_updates();
-                        let update_url = app_config.update_url.clone();
                         let repo = app_config.github_repo.clone();
                         let tx = tx_update.clone();
                         thread::spawn(move || {
                             let start = std::time::Instant::now();
-                            let res = updater::check_for_updates(&update_url, &repo);
+                            let res = updater::check_for_updates(&repo);
 
                             // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1 second
                             let elapsed = start.elapsed();
@@ -529,13 +553,22 @@ fn run_daemon(no_tray: bool) {
                         });
                     }
                     TrayCommand::DownloadUpdate => {
-                        let url = if let Some(info) = latest_update.lock().unwrap().as_ref() {
-                            info.release_url.clone()
-                        } else {
-                            format!("{}/", app_config.update_url.trim_end_matches('/'))
-                        };
-                        println!("Yangilanish sahifasi ochilmoqda: {}", url);
-                        let _ = open::that(&url);
+                        let repo = app_config.github_repo.clone();
+                        let fallback_url = latest_update.lock().unwrap().as_ref().map(|i| i.release_url.clone()).unwrap_or_else(|| format!("https://github.com/{}", repo));
+                        println!("Ilova o'z-o'zidan yangilanmoqda: {}", repo);
+                        harfiy_platform::show_custom_hud("Yangilanish yuklab olinmoqda...", true);
+                        thread::spawn(move || {
+                            match updater::perform_self_update(&repo, false) {
+                                Ok(new_ver) => {
+                                    harfiy_platform::show_custom_hud(&format!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver), true);
+                                    println!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver);
+                                }
+                                Err(e) => {
+                                    eprintln!("Yangilashda xatolik: {}. Sahifa ochilmoqda...", e);
+                                    let _ = open::that(&fallback_url);
+                                }
+                            }
+                        });
                     }
                     TrayCommand::Quit => {
                         println!("Tizim panelidan chiqish buyrug'i berildi.");
@@ -642,17 +675,24 @@ fn run_daemon(no_tray: bool) {
     tray_controller.take();
 
     // 2. Unhook keyboard hook and terminate worker thread
+    println!("Klaviatura hook'lari olib tashlanmoqda...");
     #[cfg(windows)]
     {
-        println!("Klaviatura hook'lari olib tashlanmoqda...");
         let _ = WindowsInterceptor::stop_hook();
         let _ = interceptor_thread.join();
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = MacOsInterceptor::stop_hook();
+        let _ = interceptor_thread.join();
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = interceptor_thread.join();
     }
 
     println!("Harfiy to'xtatildi.");
+    std::process::exit(0);
 }

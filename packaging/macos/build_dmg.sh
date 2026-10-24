@@ -21,15 +21,24 @@ sed -i '' "s/0.1.0/${VERSION}/g" "${APP_BUNDLE}/Contents/Info.plist"
 if command -v iconutil >/dev/null 2>&1; then
     ICONSET="AppIcon.iconset"
     mkdir -p "${ICONSET}"
-    cp assets/logo_16.png "${ICONSET}/icon_16x16.png"
-    cp assets/logo_32.png "${ICONSET}/icon_16x16@2x.png"
-    cp assets/logo_32.png "${ICONSET}/icon_32x32.png"
-    cp assets/logo_64.png "${ICONSET}/icon_32x32@2x.png"
-    cp assets/logo_128.png "${ICONSET}/icon_128x128.png"
-    cp assets/logo_256.png "${ICONSET}/icon_128x128@2x.png"
-    cp assets/logo_256.png "${ICONSET}/icon_256x256.png"
+    sips -z 16 16     assets/app_icon_1024.png --out "${ICONSET}/icon_16x16.png" >/dev/null
+    sips -z 32 32     assets/app_icon_1024.png --out "${ICONSET}/icon_16x16@2x.png" >/dev/null
+    sips -z 32 32     assets/app_icon_1024.png --out "${ICONSET}/icon_32x32.png" >/dev/null
+    sips -z 64 64     assets/app_icon_1024.png --out "${ICONSET}/icon_32x32@2x.png" >/dev/null
+    sips -z 128 128   assets/app_icon_1024.png --out "${ICONSET}/icon_128x128.png" >/dev/null
+    sips -z 256 256   assets/app_icon_1024.png --out "${ICONSET}/icon_128x128@2x.png" >/dev/null
+    sips -z 256 256   assets/app_icon_1024.png --out "${ICONSET}/icon_256x256.png" >/dev/null
+    sips -z 512 512   assets/app_icon_1024.png --out "${ICONSET}/icon_256x256@2x.png" >/dev/null
+    sips -z 512 512   assets/app_icon_1024.png --out "${ICONSET}/icon_512x512.png" >/dev/null
+    cp assets/app_icon_1024.png "${ICONSET}/icon_512x512@2x.png"
     iconutil -c icns "${ICONSET}" -o "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
     rm -rf "${ICONSET}"
+fi
+
+# Code-sign the app bundle (ad-hoc signing with stable identifier requirement)
+if command -v codesign >/dev/null 2>&1; then
+    echo "Signing ${APP_BUNDLE}..."
+    codesign --force --deep -s - -r='designated => identifier "uz.harfiy.app"' "${APP_BUNDLE}"
 fi
 
 # Prepare DMG staging folder
@@ -42,5 +51,11 @@ ln -s /Applications "${DMG_STAGING}/Applications"
 mkdir -p "${OUT_DIR}"
 DMG_NAME="harfiy-v${VERSION}-macos-${ARCH}.dmg"
 hdiutil create -volname "Harfiy" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${OUT_DIR}/${DMG_NAME}"
+
+# Code-sign the DMG if codesign is available
+if command -v codesign >/dev/null 2>&1; then
+    codesign --force -s - "${OUT_DIR}/${DMG_NAME}" 2>/dev/null || true
+fi
+
 rm -rf "${DMG_STAGING}" "${APP_BUNDLE}"
 echo "Built ${OUT_DIR}/${DMG_NAME} successfully!"

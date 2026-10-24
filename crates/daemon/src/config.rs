@@ -39,7 +39,7 @@ pub struct AppConfig {
     #[serde(default = "default_update_url")]
     pub update_url: String,
 
-    /// GitHub repository fallback to check for updates (default: "0605AbMu/harfiy")
+    /// GitHub repository fallback to check for updates (default: "0605AbMu/harfiy-release")
     #[serde(default = "default_github_repo")]
     pub github_repo: String,
 
@@ -65,11 +65,11 @@ fn default_check_updates() -> bool {
 }
 
 fn default_update_url() -> String {
-    "https://abdumannon-shamsiyev.uz/harfiy/updates".to_string()
+    "https://github.com/0605AbMu/harfiy-release".to_string()
 }
 
 fn default_github_repo() -> String {
-    "0605AbMu/harfiy".to_string()
+    "0605AbMu/harfiy-release".to_string()
 }
 
 fn default_hotkey() -> String {
@@ -125,7 +125,19 @@ impl AppConfig {
         let path = Self::resolve_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(cfg) = toml::from_str::<AppConfig>(&content) {
+                if let Ok(mut cfg) = toml::from_str::<AppConfig>(&content) {
+                    let mut changed = false;
+                    if cfg.github_repo == "0605AbMu/harfiy" || cfg.github_repo.is_empty() {
+                        cfg.github_repo = default_github_repo();
+                        changed = true;
+                    }
+                    if cfg.update_url.contains("abdumannon-shamsiyev.uz") || cfg.update_url.is_empty() {
+                        cfg.update_url = default_update_url();
+                        changed = true;
+                    }
+                    if changed {
+                        let _ = cfg.save();
+                    }
                     return (cfg, path);
                 }
             }
@@ -134,7 +146,7 @@ impl AppConfig {
         // Save default config
         let default_cfg = AppConfig::default();
         if let Ok(serialized) = toml::to_string_pretty(&default_cfg) {
-            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/0605AbMu/harfiy\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
+            let header = "# Harfiy Konfiguratsiya Fayli\n# https://github.com/0605AbMu/harfiy-release\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
             let full_text = format!("{}{}", header, serialized);
             let _ = fs::write(&path, full_text);
         }

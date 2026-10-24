@@ -302,6 +302,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          repository: 0605AbMu/harfiy-release
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ steps.vars.outputs.tag }}
           name: "Harfiy ${{ steps.vars.outputs.tag }}"
           files: release-assets/*

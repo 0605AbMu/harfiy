@@ -106,6 +106,39 @@ fn clear_submenu(submenu: &Submenu) {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn init_macos_app() {
+    use objc2_foundation::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    if let Some(mtm) = MainThreadMarker::new() {
+        let app = NSApplication::sharedApplication(mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+        app.finishLaunching();
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn pump_macos_events() {
+    use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode};
+    use objc2_app_kit::{NSApplication, NSEventMask};
+    if let Some(mtm) = MainThreadMarker::new() {
+        let app = NSApplication::sharedApplication(mtm);
+        unsafe {
+            let pool = objc2_foundation::NSAutoreleasePool::new();
+            while let Some(event) = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                NSEventMask::Any,
+                Some(&NSDate::distantPast()),
+                NSDefaultRunLoopMode,
+                true,
+            ) {
+                app.sendEvent(&event);
+                app.updateWindows();
+            }
+            drop(pool);
+        }
+    }
+}
+
 /// Populate the excluded apps submenu with explorer picker, running apps, and active exclusions.
 pub fn populate_excluded_submenu(
     submenu: &Submenu,
@@ -114,10 +147,17 @@ pub fn populate_excluded_submenu(
 ) {
     clear_submenu(submenu);
 
-    // 1. Pick via Native Windows Explorer with folder icon
+    // 1. Pick via Native File Dialog with folder icon
+    #[cfg(target_os = "windows")]
+    let pick_label = "Fayldan tanlash (.exe)...";
+    #[cfg(target_os = "macos")]
+    let pick_label = "Dasturlardan tanlash (.app)...";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let pick_label = "Dasturni tanlash...";
+
     let pick_item = IconMenuItem::with_id(
         "pick_explorer",
-        "Fayldan tanlash (.exe)...",
+        pick_label,
         true,
         make_menu_icon(MENU_FOLDER_16),
         None,
@@ -233,6 +273,9 @@ impl TrayController {
         excluded_apps: &[String],
         running_apps: &[String],
     ) -> Result<Self, TrayError> {
+        #[cfg(target_os = "macos")]
+        init_macos_app();
+
         let is_active = Arc::new(AtomicBool::new(initial_active));
         let enable_ng = Arc::new(AtomicBool::new(initial_ng));
         let autostart = Arc::new(AtomicBool::new(initial_autostart));
@@ -283,7 +326,7 @@ impl TrayController {
 
         // 3. Option checkboxes
         let ng_item = CheckMenuItem::new("'ng' -> 'ñ' qoidasi", true, initial_ng, None);
-        let autostart_item = CheckMenuItem::new("Windows bilan ishga tushish", true, initial_autostart, None);
+        let autostart_item = CheckMenuItem::new("Avtomatik ishga tushish", true, initial_autostart, None);
         let game_mode_item = CheckMenuItem::new("O'yinlarda avtomatik pauza", true, initial_game_mode, None);
 
         // 4. Excluded apps submenu (clean text)
@@ -435,6 +478,9 @@ impl TrayController {
 
     /// Check for tray menu or hotkey events (non-blocking).
     pub fn poll_events(&self) -> Option<TrayCommand> {
+        #[cfg(target_os = "macos")]
+        pump_macos_events();
+
         // Check global hotkey events (debounced 250ms for responsive toggle)
         while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.hotkey.id() {
@@ -727,6 +773,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(target_os = "macos", ignore = "muda MenuChild requires macOS main thread")]
     fn test_populate_excluded_submenu() {
         let sub = Submenu::new("Istisno dasturlar", true);
         let excluded = vec!["code.exe".to_string()];

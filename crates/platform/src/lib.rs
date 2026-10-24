@@ -71,21 +71,30 @@ pub use self::windows::{
     show_status_hud, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use self::macos::{
+    attach_parent_console, emit_copy, emit_paste, get_clipboard_text, is_autostart_enabled,
+    is_current_app_excluded, is_foreground_fullscreen, is_game_mode, pick_executable_dialog,
+    scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
+    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, MacOsEmitter,
+    MacOsInterceptor, HARFIY_MAGIC_FLAG,
+};
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn attach_parent_console() {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn show_info_dialog(title: &str, message: &str) {
     println!("[{}] {}", title, message);
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
     println!("[{}] {}", title, message);
     true
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn show_status_hud(active: bool) {
     if active {
         println!("[HUD] Harfiy: Faol");
@@ -94,70 +103,67 @@ pub fn show_status_hud(active: bool) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn show_custom_hud(message: &str, _is_success: bool) {
     println!("[HUD] {}", message);
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn pick_executable_dialog() -> Option<String> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn scan_running_apps() -> Vec<String> {
     Vec::new()
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_excluded_apps(_apps: &[String]) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_current_app_excluded() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_autostart_enabled() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_autostart(_enabled: bool) -> Result<(), PlatformError> {
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn get_clipboard_text() -> Option<String> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_clipboard_text(_text: &str) -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn emit_copy() {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn emit_paste() {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_foreground_fullscreen() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_game_mode(_enabled: bool) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_game_mode() -> bool {
     false
 }
-
-#[cfg(target_os = "macos")]
-pub use self::macos::{MacOsEmitter, MacOsInterceptor};
 
 #[cfg(target_os = "linux")]
 pub use self::linux::{LinuxEmitter, LinuxInterceptor};
