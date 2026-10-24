@@ -63,7 +63,39 @@ Agar avto-konvertatsiyadan so'ng (`sh` -> `ş`) foydalanuvchi darhol `Backspace`
 
 ---
 
-## 🚀 Ishga Tushirish va Boshqaruv
+## 📥 Yuklab Olish va O‘rnatish
+
+Tayyor dasturni **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/releases)** sahifasidan kompyuteringiz turiga mos holda yuklab oling:
+
+### 🍎 macOS (Apple Silicon M1/M2/M3/M4 va Intel)
+
+* O‘rnatish yoki yangilash uchun **`.pkg`** (yoki `.dmg`) faylini yuklab oling.
+* O‘rnatish ustasi (Installer Wizard) eski versiya ishlab turgan bo‘lsa uni to‘xtatadi, yangisini o‘rnatadi va avtomatik ishga tushiradi.
+
+> [!IMPORTANT]
+> ### ⚠️ macOS Gatekeeper («Noma’lum dasturchi») ogohlantirishini yechish:
+> 
+> Agar faylni ochganda ***«cannot be opened because it is from an unidentified developer»*** xabari chiqsa:
+> 
+> 👉 **Eng oson va tezkor yo‘li (2 soniyada):**
+> 1. `.pkg` (yoki `.dmg`) fayli ustiga sichqonchaning **O‘ng tugmasini** (yoki klaviaturadagi **`Control`** tugmasini bosib turib sichqonchaning chap tugmasini) bosing.
+> 2. Chiqqan menyudan **«Open» (Ochish)** bandini tanlang.
+> 3. Ekranga chiqqan yangi oynada **«Open» (Baribir ochish)** tugmasini bosing!
+> 
+> *(Alternativ yo‘li: **System Settings (Tizim sozlamalari)** ➔ **Privacy & Security (Maxfiylik va xavfsizlik)** bo‘limining eng pastida **«Open Anyway» (Baribir ochish)** tugmasini bosing).*
+
+### 🪟 Windows (10 / 11)
+* `harfiy-v...-windows-x86_64-setup.exe` faylini yuklab oling va ishga tushiring.
+
+### 🐧 Linux (Ubuntu / Debian / Mint)
+* `harfiy_..._amd64.deb` faylini yuklab olib, o‘rnating:
+  ```bash
+  sudo dpkg -i harfiy_*_amd64.deb
+  ```
+
+---
+
+## 🚀 Dasturchilar uchun: Kompilyatsiya va Boshqaruv
 
 ### Talablar
 - Rust 1.80+ (stable toolchain)
@@ -137,9 +169,10 @@ Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **
 * 🪟 **Windows (`.exe` Installer):** `harfiy-vX.Y.Z-windows-x86_64-setup.exe`
   - Inno Setup orqali to'liq o'rnatuvchi: Start Menu va Desktop yorliqlari, Windows bilan avtomatik ishga tushish (Autostart) tanlovi va toza uninstaller.
   - Qo'shimcha: Portativ `harfiy-vX.Y.Z-windows-x86_64.zip`.
-* 🍎 **macOS (`.dmg` Installer):** `harfiy-vX.Y.Z-macos-{x86_64|arm64}.dmg`
-  - Intel va Apple Silicon (M1/M2/M3/M4) uchun rasmiy Apple Disk Image (`.dmg`), `Harfiy.app` bundle va `/Applications` ga bir harakat bilan o'rnatish.
-  - Qo'shimcha: Portativ `.tar.gz` arxivlari.
+* 🍎 **macOS (`.pkg` va `.dmg` Installer):** `harfiy-vX.Y.Z-macos-{x86_64|arm64}.pkg` va `.dmg`
+  - Intel va Apple Silicon (M1/M2/M3/M4) uchun rasmiy Apple Installer Wizard (`.pkg`): yangilash paytida eski ilovani avtomatik to‘xtatadi, yangisini o‘rnatadi va avtomatik ishga tushiradi.
+  - Apple Disk Image (`.dmg`): ichida `Harfiy.app` va Installer Wizard mavjud.
+  - Qo‘shimcha: Portativ `.tar.gz` arxivlari.
 * 🐧 **Ubuntu / Debian (`.deb` Installer):** `harfiy_X.Y.Z_amd64.deb`
   - `sudo dpkg -i harfiy_*.deb` orqali tizimga o'rnatish, `/usr/bin/harfiy`, `.desktop` menyu yorlig'i, hicolor piktogrammalari va `systemd --user` xizmat integratsiyasi.
   - Qo'shimcha: Portativ `harfiy-vX.Y.Z-linux-x86_64.tar.gz`.
