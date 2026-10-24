@@ -65,10 +65,11 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 #[cfg(windows)]
 pub use self::windows::{
     acquire_single_instance_lock, attach_parent_console, emit_copy, emit_paste, get_clipboard_text,
-    is_autostart_enabled, is_current_app_excluded, is_foreground_fullscreen, is_game_mode,
-    pick_executable_dialog, pump_messages, scan_running_apps, set_autostart, set_clipboard_text,
-    set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
-    show_status_hud, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    get_running_daemon_pid, is_autostart_enabled, is_current_app_excluded,
+    is_foreground_fullscreen, is_game_mode, pick_executable_dialog, pump_messages,
+    scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
+    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, stop_running_daemon,
+    SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(target_os = "macos")]
@@ -200,6 +201,13 @@ pub struct SingleInstanceGuard {
 }
 
 #[cfg(unix)]
+impl Drop for SingleInstanceGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(std::env::temp_dir().join("harfiy.pid"));
+    }
+}
+
+#[cfg(unix)]
 pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
     use std::os::unix::io::AsRawFd;
     let lock_path = std::env::temp_dir().join("harfiy.lock");
@@ -214,10 +222,46 @@ pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
     let fd = file.as_raw_fd();
     let res = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
     if res == 0 {
+        let _ = std::fs::write(
+            std::env::temp_dir().join("harfiy.pid"),
+            std::process::id().to_string(),
+        );
         Some(SingleInstanceGuard { _file: file })
     } else {
         None
     }
+}
+
+#[cfg(unix)]
+pub fn get_running_daemon_pid() -> Option<u32> {
+    let pid_path = std::env::temp_dir().join("harfiy.pid");
+    let content = std::fs::read_to_string(&pid_path).ok()?;
+    let pid: u32 = content.trim().parse().ok()?;
+
+    let is_alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+    if is_alive {
+        Some(pid)
+    } else {
+        let _ = std::fs::remove_file(&pid_path);
+        None
+    }
+}
+
+#[cfg(unix)]
+pub fn stop_running_daemon() -> Result<bool, PlatformError> {
+    if let Some(pid) = get_running_daemon_pid() {
+        let res = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        let _ = std::fs::remove_file(std::env::temp_dir().join("harfiy.pid"));
+        if res == 0 {
+            return Ok(true);
+        } else {
+            return Err(PlatformError::Other(format!(
+                "Failed to send SIGTERM to process {}",
+                pid
+            )));
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(not(any(windows, unix)))]
@@ -226,4 +270,14 @@ pub struct SingleInstanceGuard;
 #[cfg(not(any(windows, unix)))]
 pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
     Some(SingleInstanceGuard)
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn get_running_daemon_pid() -> Option<u32> {
+    None
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn stop_running_daemon() -> Result<bool, PlatformError> {
+    Ok(false)
 }

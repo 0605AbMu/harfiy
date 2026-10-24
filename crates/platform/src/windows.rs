@@ -74,6 +74,7 @@ unsafe impl Sync for SingleInstanceGuard {}
 
 impl Drop for SingleInstanceGuard {
     fn drop(&mut self) {
+        let _ = std::fs::remove_file(std::env::temp_dir().join("harfiy.pid"));
         unsafe {
             let _ = CloseHandle(self.handle);
         }
@@ -92,8 +93,52 @@ pub fn acquire_single_instance_lock() -> Option<SingleInstanceGuard> {
             let _ = CloseHandle(handle);
             return None;
         }
+        let _ = std::fs::write(
+            std::env::temp_dir().join("harfiy.pid"),
+            std::process::id().to_string(),
+        );
         Some(SingleInstanceGuard { handle })
     }
+}
+
+/// Retrieve the PID of the active running daemon instance if present.
+pub fn get_running_daemon_pid() -> Option<u32> {
+    let pid_path = std::env::temp_dir().join("harfiy.pid");
+    let content = std::fs::read_to_string(&pid_path).ok()?;
+    let pid: u32 = content.trim().parse().ok()?;
+
+    unsafe {
+        if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            let mut exit_code = 0u32;
+            let res = windows::Win32::System::Threading::GetExitCodeProcess(handle, &mut exit_code);
+            let _ = CloseHandle(handle);
+            if res.is_ok() && exit_code == 259 {
+                // STILL_ACTIVE (259)
+                return Some(pid);
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&pid_path);
+    None
+}
+
+/// Terminate the active running daemon instance on Windows.
+pub fn stop_running_daemon() -> Result<bool, PlatformError> {
+    if let Some(pid) = get_running_daemon_pid() {
+        unsafe {
+            if let Ok(handle) = OpenProcess(
+                windows::Win32::System::Threading::PROCESS_TERMINATE,
+                false,
+                pid,
+            ) {
+                let _ = windows::Win32::System::Threading::TerminateProcess(handle, 0);
+                let _ = CloseHandle(handle);
+            }
+        }
+        let _ = std::fs::remove_file(std::env::temp_dir().join("harfiy.pid"));
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// Show a native informational message dialog.

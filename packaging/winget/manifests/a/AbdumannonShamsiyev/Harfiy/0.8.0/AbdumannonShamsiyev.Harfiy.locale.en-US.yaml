@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+
+PackageIdentifier: AbdumannonShamsiyev.Harfiy
+PackageVersion: 0.8.0
+PackageLocale: en-US
+Publisher: Abdumannon Shamsiyev
+PublisherUrl: https://abdumannon-shamsiyev.uz/harfiy
+PublisherSupportUrl: https://t.me/Abdumannon_Shamsiyev
+Author: Abdumannon Shamsiyev
+PackageName: Harfiy
+PackageUrl: https://github.com/0605AbMu/harfiy
+License: MIT
+LicenseUrl: https://raw.githubusercontent.com/0605AbMu/harfiy/master/LICENSE
+Copyright: Copyright (c) 2026 Abdumannon Shamsiyev
+ShortDescription: Real-time Uzbek Latin alphabet auto-converter background daemon
+Description: |-
+  Harfiy is an ultra-fast, zero-latency background service written in Rust that converts Uzbek Latin digraphs (sh, ch, o', g') into their official unified graphemes (ş, ç, ö, ğ) in real-time across all desktop applications.
+Moniker: harfiy
+Tags:
+  - uzbek
+  - alphabet
+  - keyboard
+  - typing
+  - converter
+  - utility
+  - rust
+ReleaseNotesUrl: https://github.com/0605AbMu/harfiy/releases/tag/0.8.0
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

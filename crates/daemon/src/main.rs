@@ -55,18 +55,24 @@ fn main() {
 
     match cli.command {
         Some(Commands::Status) => {
-            println!("Harfiy daemon status: Ready / Standby.");
+            if let Some(pid) = harfiy_platform::get_running_daemon_pid() {
+                println!("✅ Harfiy fonda faol ishlamoqda (PID: {}).", pid);
+            } else {
+                println!("⚪ Harfiy hozirda ishlamayapti (To'xtatilgan).");
+            }
         }
         Some(Commands::Stop) => {
-            #[cfg(windows)]
-            {
-                println!("Fonda ishlayotgan Harfiy xizmatiga to'xtatish signali yuborilmoqda...");
-                let _ = harfiy_platform::WindowsInterceptor::stop_hook();
-                println!("To'xtatish signali yuborildi.");
-            }
-            #[cfg(not(windows))]
-            {
-                println!("Signal yuborildi.");
+            println!("Fonda ishlayotgan Harfiy xizmati to'xtatilmoqda...");
+            match harfiy_platform::stop_running_daemon() {
+                Ok(true) => {
+                    println!("🛑 Harfiy xizmati muvaffaqiyatli to'xtatildi.");
+                }
+                Ok(false) => {
+                    println!("ℹ️ Fonda ishlayotgan Harfiy jarayoni topilmadi.");
+                }
+                Err(e) => {
+                    eprintln!("Xatolik: Jarayonni to'xtatib bo'lmadi: {}", e);
+                }
             }
         }
         Some(Commands::Start { no_tray }) => {

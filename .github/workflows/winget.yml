@@ -1,0 +1,42 @@
+name: Publish to WinGet
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish (e.g., 0.8.0)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  publish-winget:
+    name: WinGet Releaser
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.version }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Target tag: ${TAG}"
+
+      - name: Publish to Windows Package Manager
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: AbdumannonShamsiyev.Harfiy
+          token: ${{ secrets.WINGET_TOKEN }}
+          release-tag: ${{ steps.vars.outputs.tag }}
+          installers-regex: '.*-windows-.*\.exe$'

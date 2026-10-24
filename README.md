@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/0605AbMu/harfiy/releases"><img src="https://img.shields.io/github/v/release/0605AbMu/harfiy?color=blue&label=Versiya" alt="Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Litsenziya-MIT-green.svg" alt="License" /></a>
-  <img src="https://img.shields.io/badge/Platforma-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platforms" />
+  <img src="https://img.shields.io/badge/Platforma-macOS%20%7C%20Windows%20%7C%20Linux%20(WIP)-lightgrey.svg" alt="Platforms" />
   <img src="https://img.shields.io/badge/Rust-1.80%2B-orange.svg" alt="Rust 1.80+" />
   <img src="https://img.shields.io/badge/Tarmoq-100%25%20Offline-success.svg" alt="Zero Network" />
 </p>
@@ -65,26 +65,48 @@ O‘zbekiston Respublikasining yangilangan lotin alifbosi islohotiga ko‘ra, qo
 
 Tayyor dasturni [GitHub Releases](https://github.com/0605AbMu/harfiy/releases) sahifasidan operatsion tizimingizga mos holda yuklab oling:
 
-### 🍎 macOS (Apple Silicon M1/M2/M3/M4 va Intel)
+### 🍎 macOS (Apple Silicon M1/M2/M3/M4 va Intel) — *Barqaror*
 1. `.pkg` (o‘rnatuvchi usta) yoki `.dmg` faylini yuklab oling va oching.
 2. Agar macOS Gatekeeper ogohlantirishi chiqsa:
-   - **Oddiy usul:** **System Settings** -> **Privacy & Security** bo‘limiga tushib, **«Open Anyway»** tugmasini bosing.
+   - **Oddiy usul:** **System Settings** -> **Privacy & Security** bo‘limiga tushib, **«Open Anyway»** (Baribir ochish) tugmasini bosing.
    - **Terminal orqali (1 soniya):**
      ```bash
-     xattr -cr ~/Downloads/harfiy*
+     xattr -cr /Applications/Harfiy.app
      ```
 3. O‘rnatilgach, macOS tizim panelida (Tray) Harfiy belgisi paydo bo‘ladi.
 4. Tizim ruxsati so‘ralganda: **System Settings** -> **Privacy & Security** -> **Accessibility** bo‘limida Harfiy ilovasini yoqing.
 
-### 🪟 Windows (10 / 11)
+### 🪟 Windows (10 / 11) — *Barqaror*
+
+**1. WinGet orqali (Tavsiya etiladi - 1 buyruq bilan o‘rnatish):**
+```cmd
+winget install harfiy
+```
+*(yoki `winget install Harfiy`)*
+
+**2. O‘rnatuvchi fayl orqali:**
 - `harfiy-...-windows-x86_64-setup.exe` faylini yuklab oling va odatiy tarzda o‘rnating.
 - O‘rnatuvchi dasturni avtomatik ishga tushirish (Autostart) va bosh menyuga yorliq qo‘shish imkonini beradi.
 
-### 🐧 Linux (Ubuntu / Debian / Mint)
-- `.deb` paketini yuklab olib, terminalda o‘rnating:
+> [!NOTE]
+> **Windows SmartScreen ogohlantirishi chiqsa:**
+> Harfiy ochiq kodli va 100% oflayn xizmat bo‘lib, dastlab yuklab olinganda Windows SmartScreen (*«Windows protected your PC»*) xabari chiqishi mumkin. Bunda **«More info»** (Batafsil ma'lumot) tugmasini, so‘ngra **«Run anyway»** (Baribir ishga tushirish) tugmasini bosing. Dastur hech qanday internet so‘rovlarini yubormaydi (Zero Network).
+
+### 🐧 Linux (Ubuntu / Debian / Mint) — *Eksperimental (WIP)*
+- Linux uchun asosiy FSM dvigateli tayyor, biroq tizim darajasidagi klaviatura hooki (`evdev` / `/dev/uinput`) hozirda takomillashtirilmoqda.
+- `.deb` paketini sinab ko‘rish:
   ```bash
   sudo dpkg -i harfiy_*_amd64.deb
   ```
+  *(To‘liq barqaror reliz yaqin kunda e'lon qilinadi)*.
+
+---
+
+## 💡 Foydali Maslahatlar va Ko‘p Tilli Matn (Pro-Tips)
+
+- ⏸️ **Vaqtincha to‘xtatish / yoqish:** Ingliz tilida matn yozayotganingizda yoki kod terayotganingizda, istalgan paytda **`Ctrl + Shift + U`** tugmalarini bosing. Harfiy darhol pauza rejimiga o‘tadi (ekranda qisqa HUD bildirishnomasi chiqadi). Qayta yoqish uchun yana shu kombinatsiyani bosing.
+- ↩️ **Tasodifiy o‘zgarishni bekor qilish:** Agar inglizcha so‘z yozayotganingizda (masalan, `she` -> `şe`) harf o‘zgarib ketsa, darhol **`Backspace`** bosing — so‘z avtomatik tarzda asl `sh` holiga qaytadi (**Instant Undo**).
+- 🚫 **Dasturlarni istisno qilish:** Kod muharrirlari (VS Code, Sublime), Terminal yoki o‘yinlarni Harfiy menyusidagi **«Istisno dasturlar (Excluded apps)»** bo‘limiga qo‘shib qo‘ysangiz, o‘sha dasturlar ochilganda Harfiy avtomatik ravishda o‘zini to‘xtatib turadi.
 
 ---
 
@@ -162,6 +184,9 @@ cargo run -p harfiy-daemon -- --no-tray
 
 # Jarayon holatini tekshirish
 cargo run -p harfiy-daemon -- status
+
+# Fondagi jarayonni to‘xtatish
+cargo run -p harfiy-daemon -- stop
 ```
 
 ---

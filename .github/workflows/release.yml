@@ -285,3 +285,31 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+  # ===========================================================================
+  # WINGET: Publish Windows package to Windows Package Manager Community Repo
+  # ===========================================================================
+  publish-winget:
+    name: Publish to WinGet Community Repo
+    needs: [publish-release]
+    runs-on: windows-latest
+    steps:
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Publish to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        if: ${{ env.WINGET_TOKEN != '' }}
+        continue-on-error: true
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        with:
+          identifier: AbdumannonShamsiyev.Harfiy
+          token: ${{ secrets.WINGET_TOKEN }}
+          release-tag: ${{ steps.vars.outputs.tag }}
+          installers-regex: '.*-windows-.*\.exe$'
+

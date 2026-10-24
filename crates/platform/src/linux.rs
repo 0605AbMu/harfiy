@@ -3,6 +3,10 @@
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
 use harfiy_engine::{InputEvent, KeyAction};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static LINUX_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 /// Synthetic keyboard event emitter for Linux using /dev/uinput.
 #[derive(Debug, Clone, Default)]
 pub struct LinuxEmitter;
@@ -40,10 +44,18 @@ impl KeyboardInterceptor for LinuxInterceptor {
     where
         F: FnMut(InputEvent) -> KeyAction + Send + 'static,
     {
+        eprintln!(
+            "⚠️ [Harfiy Linux] evdev/uinput klaviatura adapteri hozirda ishlab chiqilmoqda (WIP)."
+        );
+        eprintln!("ℹ️ To'liq avto-konvertatsiya imkoniyatlari hozircha Windows va macOS tizimlarida barqaror mavjud.");
+        while !LINUX_STOP_REQUESTED.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
         Ok(())
     }
 
     fn stop(&mut self) -> Result<(), PlatformError> {
+        LINUX_STOP_REQUESTED.store(true, Ordering::SeqCst);
         Ok(())
     }
 }
