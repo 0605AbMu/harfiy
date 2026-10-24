@@ -19,9 +19,6 @@ const TRAY_PAUSED_32: &[u8] = include_bytes!("../../../assets/tray_paused_32.rgb
 const MENU_BLOG_16: &[u8] = include_bytes!("../../../assets/menu_blog_16.rgba");
 const MENU_WEB_16: &[u8] = include_bytes!("../../../assets/menu_web_16.rgba");
 const MENU_SUPPORT_16: &[u8] = include_bytes!("../../../assets/menu_support_16.rgba");
-const MENU_CHECK_16: &[u8] = include_bytes!("../../../assets/menu_check_16.rgba");
-const MENU_STAR_16: &[u8] = include_bytes!("../../../assets/menu_star_16.rgba");
-const MENU_SYNC_16: &[u8] = include_bytes!("../../../assets/menu_sync_16.rgba");
 const MENU_FOLDER_16: &[u8] = include_bytes!("../../../assets/menu_folder_16.rgba");
 const MENU_REMOVE_16: &[u8] = include_bytes!("../../../assets/menu_remove_16.rgba");
 const MENU_ADD_16: &[u8] = include_bytes!("../../../assets/menu_add_16.rgba");
@@ -72,8 +69,6 @@ pub enum TrayCommand {
     ToggleNg(bool),
     ToggleAutostart(bool),
     ToggleGameMode(bool),
-    CheckUpdates,
-    DownloadUpdate,
     Quit,
     PickExcludedAppExplorer,
     AddExcludedApp(String),
@@ -253,7 +248,6 @@ pub struct TrayController {
     stats_count_item: IconMenuItem,
     stats_time_item: MenuItem,
     _version_item: MenuItem,
-    update_item: IconMenuItem,
     web_item: IconMenuItem,
     blog_item: IconMenuItem,
     support_item: IconMenuItem,
@@ -262,7 +256,6 @@ pub struct TrayController {
     enable_ng: Arc<AtomicBool>,
     autostart: Arc<AtomicBool>,
     game_mode: Arc<AtomicBool>,
-    has_update: Arc<AtomicBool>,
     last_hotkey_press: Arc<Mutex<Instant>>,
     last_convert_hotkey_press: Arc<Mutex<Instant>>,
 }
@@ -290,7 +283,6 @@ impl TrayController {
         let enable_ng = Arc::new(AtomicBool::new(initial_ng));
         let autostart = Arc::new(AtomicBool::new(initial_autostart));
         let game_mode = Arc::new(AtomicBool::new(initial_game_mode));
-        let has_update = Arc::new(AtomicBool::new(false));
         let last_hotkey_press = Arc::new(Mutex::new(
             Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
         ));
@@ -384,16 +376,7 @@ impl TrayController {
         // 6. Current version label
         let version_item = MenuItem::new(format!("Harfiy v{}", current_version), false, None);
 
-        // 7. Dynamic single update item with real icon
-        let update_item = IconMenuItem::with_id(
-            "update_action",
-            "Eng so'nggi versiya",
-            true,
-            make_menu_icon(MENU_CHECK_16),
-            None,
-        );
-
-        // 8. Web & Telegram links: Web, Blog & Support with real icons and short text
+        // 7. Web & Telegram links: Web, Blog & Support with real icons and short text
         let web_item = IconMenuItem::with_id(
             "open_web",
             "Veb-sahifa",
@@ -416,7 +399,7 @@ impl TrayController {
             None,
         );
 
-        // 9. Quit item
+        // 8. Quit item
         let quit_item = MenuItem::new("Chiqish", true, None);
 
         let sep1 = PredefinedMenuItem::separator();
@@ -444,7 +427,6 @@ impl TrayController {
                 &stats_submenu,
                 &sep3,
                 &version_item,
-                &update_item,
                 &sep4,
                 &web_item,
                 &blog_item,
@@ -506,7 +488,6 @@ impl TrayController {
             stats_count_item,
             stats_time_item,
             _version_item: version_item,
-            update_item,
             web_item,
             blog_item,
             support_item,
@@ -515,7 +496,6 @@ impl TrayController {
             enable_ng,
             autostart,
             game_mode,
-            has_update,
             last_hotkey_press,
             last_convert_hotkey_press,
         })
@@ -607,12 +587,6 @@ impl TrayController {
                 self.game_mode.store(new_state, Ordering::SeqCst);
                 self.game_mode_item.set_checked(new_state);
                 return Some(TrayCommand::ToggleGameMode(new_state));
-            } else if event.id == self.update_item.id() {
-                if self.has_update.load(Ordering::SeqCst) {
-                    return Some(TrayCommand::DownloadUpdate);
-                } else {
-                    return Some(TrayCommand::CheckUpdates);
-                }
             } else if event.id == self.web_item.id() {
                 return Some(TrayCommand::OpenWebPage);
             } else if event.id == self.blog_item.id() {
@@ -680,38 +654,6 @@ impl TrayController {
     pub fn set_game_mode_checked(&self, enabled: bool) {
         self.game_mode.store(enabled, Ordering::SeqCst);
         self.game_mode_item.set_checked(enabled);
-    }
-
-    /// Update tray menu when a new version is discovered.
-    pub fn set_update_available(&self, latest_version: &str) {
-        self.has_update.store(true, Ordering::SeqCst);
-        self.update_item.set_icon(make_menu_icon(MENU_STAR_16));
-        self.update_item
-            .set_text(format!("Yangilash (v{})", latest_version));
-        self.update_item.set_enabled(true);
-        let _ = self.tray_icon.set_tooltip(Some(format!(
-            "Harfiy - Yangi versiya mavjud: v{}!",
-            latest_version
-        )));
-    }
-
-    /// Update tray menu when the installed version is already the latest.
-    pub fn set_up_to_date(&self) {
-        self.has_update.store(false, Ordering::SeqCst);
-        self.update_item.set_icon(make_menu_icon(MENU_CHECK_16));
-        self.update_item
-            .set_text("Eng so'nggi versiya");
-        self.update_item.set_enabled(true);
-        let _ = self.tray_icon.set_tooltip(Some("Harfiy - Eng so'nggi versiya o'rnatilgan"));
-    }
-
-    /// Update tray menu while an update check is in progress.
-    pub fn set_checking_updates(&self) {
-        self.update_item.set_icon(make_menu_icon(MENU_SYNC_16));
-        self.update_item
-            .set_text("Tekshirilmoqda...");
-        self.update_item.set_enabled(false);
-        let _ = self.tray_icon.set_tooltip(Some("Harfiy - Yangilanishlar tekshirilmoqda..."));
     }
 
     /// Internal helper to update state, check item, and change icon.

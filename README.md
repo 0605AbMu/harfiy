@@ -130,9 +130,6 @@ cargo run -p harfiy-daemon -- --no-tray
 
 # Holatni tekshirish
 cargo run -p harfiy-daemon -- status
-
-# Yangilanishlarni tekshirish (GitHub Releases orqali)
-cargo run -p harfiy-daemon -- check-updates
 ```
 
 ### Global Hotkey
@@ -147,10 +144,11 @@ Dastur ishga tushganda avtomatik ravishda `config.toml` yaratiladi yoki yuklanad
 ```toml
 # Harfiy Konfiguratsiya Fayli
 enable_ng = false
+smart_apostrophe = true
+game_mode = true
 hotkey = "Ctrl+Shift+U"
+convert_hotkey = "Ctrl+Alt+U"
 excluded_apps = []
-check_updates = true
-github_repo = "0605AbMu/harfiy-release"
 ```
 
 Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/releases)**

@@ -31,18 +31,6 @@ pub struct AppConfig {
     #[serde(default = "default_excluded_apps")]
     pub excluded_apps: Vec<String>,
 
-    /// Check for updates on launch and in tray (default: true)
-    #[serde(default = "default_check_updates")]
-    pub check_updates: bool,
-
-    /// Update URL for custom update server (default: "https://abdumannon-shamsiyev.uz/harfiy/updates")
-    #[serde(default = "default_update_url")]
-    pub update_url: String,
-
-    /// GitHub repository fallback to check for updates (default: "0605AbMu/harfiy-release")
-    #[serde(default = "default_github_repo")]
-    pub github_repo: String,
-
     /// Total number of converted digraphs and apostrophes
     #[serde(default)]
     pub total_conversions: u64,
@@ -58,18 +46,6 @@ fn default_smart_apostrophe() -> bool {
 
 fn default_game_mode() -> bool {
     true
-}
-
-fn default_check_updates() -> bool {
-    true
-}
-
-fn default_update_url() -> String {
-    "https://github.com/0605AbMu/harfiy-release".to_string()
-}
-
-fn default_github_repo() -> String {
-    "0605AbMu/harfiy-release".to_string()
 }
 
 fn default_hotkey() -> String {
@@ -93,9 +69,6 @@ impl Default for AppConfig {
             hotkey: default_hotkey(),
             convert_hotkey: default_convert_hotkey(),
             excluded_apps: default_excluded_apps(),
-            check_updates: default_check_updates(),
-            update_url: default_update_url(),
-            github_repo: default_github_repo(),
             total_conversions: 0,
         }
     }
@@ -125,19 +98,7 @@ impl AppConfig {
         let path = Self::resolve_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(mut cfg) = toml::from_str::<AppConfig>(&content) {
-                    let mut changed = false;
-                    if cfg.github_repo == "0605AbMu/harfiy" || cfg.github_repo.is_empty() {
-                        cfg.github_repo = default_github_repo();
-                        changed = true;
-                    }
-                    if cfg.update_url.contains("abdumannon-shamsiyev.uz") || cfg.update_url.is_empty() {
-                        cfg.update_url = default_update_url();
-                        changed = true;
-                    }
-                    if changed {
-                        let _ = cfg.save();
-                    }
+                if let Ok(cfg) = toml::from_str::<AppConfig>(&content) {
                     return (cfg, path);
                 }
             }

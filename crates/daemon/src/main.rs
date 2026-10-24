@@ -4,10 +4,8 @@
 //! Real-time Uzbek Latin orthography conversion engine.
 
 mod config;
-mod updater;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -23,7 +21,6 @@ use harfiy_platform::{KeyboardInterceptor, LinuxInterceptor};
 use harfiy_tray::{StandaloneHotKey, TrayCommand, TrayController};
 
 use crate::config::AppConfig;
-use crate::updater::UpdateInfo;
 
 #[derive(Parser)]
 #[command(name = "harfiy")]
@@ -50,9 +47,6 @@ enum Commands {
     Status,
     /// Stop running daemon instance
     Stop,
-    /// Check for updates from GitHub Releases
-    #[command(alias = "update")]
-    CheckUpdates,
 }
 
 fn main() {
@@ -75,9 +69,6 @@ fn main() {
                 println!("Signal yuborildi.");
             }
         }
-        Some(Commands::CheckUpdates) => {
-            run_check_updates_cli();
-        }
         Some(Commands::Start { no_tray }) => {
             run_daemon(no_tray);
         }
@@ -85,135 +76,6 @@ fn main() {
             run_daemon(cli.no_tray);
         }
     }
-}
-
-fn run_check_updates_cli() {
-    let (cfg, _) = AppConfig::load_or_create();
-    let current_ver = env!("CARGO_PKG_VERSION");
-    println!("Harfiy v{} - GitHub Releases orqali yangilanishlar tekshirilmoqda...", current_ver);
-    println!("GitHub repozitoriysi: {}", cfg.github_repo);
-
-    match updater::check_for_updates(&cfg.github_repo) {
-        Ok(info) => {
-            println!("Joriy versiya: v{}", info.current_version);
-            println!("Eng so'nggi versiya: v{}", info.latest_version);
-            if info.has_update {
-                println!("\n⭐ Yangi versiya mavjud: v{}!", info.latest_version);
-                println!("Yuklab olish havolasi: {}", info.release_url);
-                println!("Dasturni yangilashni xohlaysizmi? (h/y)");
-                let mut buf = String::new();
-                let _ = std::io::stdin().read_line(&mut buf);
-                let choice = buf.trim().to_lowercase();
-                if choice == "h" || choice == "ha" || choice == "y" || choice == "yes" {
-                    if let (Some(ref url), Some(ref name)) = (&info.installer_download_url, &info.installer_asset_name) {
-                        println!("O'rnatuvchi paket yuklab olinmoqda: {} ...", name);
-                        match updater::download_installer(url, name, |downloaded, total| {
-                            if let Some(t) = total {
-                                if t > 0 && downloaded % (512 * 1024) == 0 {
-                                    let pct = (downloaded as f64 / t as f64) * 100.0;
-                                    print!("\rYuklanmoqda: {:.1}% ({}/{} bayt)", pct, downloaded, t);
-                                    let _ = std::io::Write::flush(&mut std::io::stdout());
-                                }
-                            }
-                        }) {
-                            Ok(path) => {
-                                println!("\n✅ Muvaffaqiyatli yuklab olindi: {}", path.display());
-                                println!("O'rnatuvchi ishga tushirilmoqda...");
-                                let _ = updater::launch_installer_and_exit(&path);
-                                return;
-                            }
-                            Err(e) => {
-                                eprintln!("\nYuklab olishda xatolik: {}", e);
-                            }
-                        }
-                    }
-
-                    println!("Brauzerda yuklab olish sahifasi ochilmoqda: {}", info.release_url);
-                    let _ = open::that(&info.release_url);
-                }
-            } else {
-                println!("\n✅ Siz eng so'nggi versiyadan foydalanmoqdasiz.");
-            }
-        }
-        Err(e) => {
-            eprintln!("Yangilanishni tekshirishda xatolik yuz berdi: {}", e);
-        }
-    }
-}
-
-/// Interactive update flow: prompts user, downloads installer with feedback, launches it and exits.
-fn handle_interactive_update(info: &UpdateInfo) {
-    let prompt_msg = format!(
-        "Harfiy dasturining yangi versiyasi mavjud!\n\n\
-         • Joriy versiya: v{}\n\
-         • Yangi versiya: v{}\n\n\
-         Yangi versiyani avtomatik yuklab olib, o'rnatishni boshlaysizmi?",
-        info.current_version, info.latest_version
-    );
-
-    if !harfiy_platform::show_confirm_dialog("Harfiy - Yangilanish mavjud", &prompt_msg) {
-        println!("Foydalanuvchi yangilanishni rad etdi.");
-        return;
-    }
-
-    println!("\n⭐ [YANGILANISH] Harfiy v{} yuklab olinmoqda...", info.latest_version);
-    harfiy_platform::show_custom_hud(
-        &format!("Harfiy v{} yuklab olinmoqda... Iltimos, kuting.", info.latest_version),
-        true,
-    );
-
-    if let (Some(ref url), Some(ref name)) = (&info.installer_download_url, &info.installer_asset_name) {
-        println!("O'rnatuvchi fayl: {}", name);
-        println!("Yuklab olish manzili: {}", url);
-
-        let dl_result = updater::download_installer(url, name, |downloaded, total| {
-            if let Some(t) = total {
-                if t > 0 && downloaded % (512 * 1024) == 0 {
-                    let pct = (downloaded as f64 / t as f64) * 100.0;
-                    println!("Yuklanmoqda: {:.1}% ({}/{} bayt)", pct, downloaded, t);
-                }
-            }
-        });
-
-        match dl_result {
-            Ok(installer_path) => {
-                println!("✅ Yangilanish muvaffaqiyatli yuklab olindi: {}", installer_path.display());
-                harfiy_platform::show_custom_hud(
-                    "Yangilanish yuklab olindi! O'rnatuvchi ishga tushirilmoqda...",
-                    true,
-                );
-                std::thread::sleep(Duration::from_millis(800));
-
-                if let Err(e) = updater::launch_installer_and_exit(&installer_path) {
-                    eprintln!("O'rnatuvchini ishga tushirishda xatolik: {}", e);
-                    let err_msg = format!(
-                        "O'rnatuvchi faylni ishga tushirib bo'lmadi:\n{}\n\nYuklab olish sahifasini brauzerda ochishni xohlaysizmi?",
-                        e
-                    );
-                    if harfiy_platform::show_confirm_dialog("Harfiy - Xatolik", &err_msg) {
-                        let _ = open::that(&info.release_url);
-                    }
-                }
-                return;
-            }
-            Err(e) => {
-                eprintln!("Yuklab olishda xatolik: {}", e);
-                let err_msg = format!(
-                    "Yangilanish paketini yuklab olishda xatolik yuz berdi:\n{}\n\nYuklab olish sahifasini brauzerda ochishni xohlaysizmi?",
-                    e
-                );
-                if harfiy_platform::show_confirm_dialog("Harfiy - Yangilashda xatolik", &err_msg) {
-                    let _ = open::that(&info.release_url);
-                }
-                return;
-            }
-        }
-    }
-
-    // Fallback if no matching installer was found in release assets
-    println!("Platforma uchun o'rnatuvchi topilmadi. Brauzerda ochilmoqda: {}", info.release_url);
-    harfiy_platform::show_custom_hud("Yangilanish sahifasi brauzerda ochilmoqda...", true);
-    let _ = open::that(&info.release_url);
 }
 
 fn open_telegram(domain: &str) {
@@ -435,35 +297,11 @@ fn run_daemon(no_tray: bool) {
         (None, StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok())
     };
 
-    struct UpdateEvent {
-        result: Result<UpdateInfo, String>,
-        is_manual: bool,
-    }
-
-    // Update checker channel & state
-    let latest_update: Arc<Mutex<Option<UpdateInfo>>> = Arc::new(Mutex::new(None));
-    let (tx_update, rx_update): (Sender<UpdateEvent>, Receiver<UpdateEvent>) = channel();
-
-    // Trigger initial background update check if enabled
-    if app_config.check_updates {
-        let repo = app_config.github_repo.clone();
-        let tx = tx_update.clone();
-        thread::spawn(move || {
-            let res = updater::check_for_updates(&repo);
-            let _ = tx.send(UpdateEvent {
-                result: res,
-                is_manual: false,
-            });
-        });
-    }
-
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
 
     let mut last_scan = std::time::Instant::now();
     let mut last_perm_check = std::time::Instant::now();
     let mut last_perm_state = initial_permission;
-    let mut last_periodic_update_check = std::time::Instant::now();
-    let periodic_update_interval = Duration::from_secs(4 * 3600); // Har 4 soatda avtomatik tekshirish
 
     // Main event loop
     while is_running.load(Ordering::SeqCst) {
@@ -499,67 +337,6 @@ fn run_daemon(no_tray: bool) {
                 running_apps = new_running;
                 if let Some(tray) = &tray_controller {
                     tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
-                }
-            }
-        }
-
-        // Periodically check for updates in the background (every 4 hours)
-        if app_config.check_updates && last_periodic_update_check.elapsed() >= periodic_update_interval {
-            last_periodic_update_check = std::time::Instant::now();
-            let repo = app_config.github_repo.clone();
-            let tx = tx_update.clone();
-            thread::spawn(move || {
-                let res = updater::check_for_updates(&repo);
-                let _ = tx.send(UpdateEvent {
-                    result: res,
-                    is_manual: false,
-                });
-            });
-        }
-
-        // Process asynchronous update notifications
-        if let Ok(event) = rx_update.try_recv() {
-            if let Some(tray) = &tray_controller {
-                match event.result {
-                    Ok(info) => {
-                        if info.has_update {
-                            println!("\n⭐ [YANGILANISH] Yangi versiya mavjud: v{}!", info.latest_version);
-                            println!("Yuklab olish: {}", info.release_url);
-                            tray.set_update_available(&info.latest_version);
-
-                            if event.is_manual {
-                                let info_clone = info.clone();
-                                thread::spawn(move || {
-                                    handle_interactive_update(&info_clone);
-                                });
-                            }
-                        } else {
-                            tray.set_up_to_date();
-                            if event.is_manual {
-                                let msg = format!(
-                                    "Siz eng so'nggi versiyadan foydalanmoqdasiz (v{}).\nHech qanday yangilanish talab etilmaydi.",
-                                    info.current_version
-                                );
-                                thread::spawn(move || {
-                                    harfiy_platform::show_info_dialog("Harfiy", &msg);
-                                });
-                            }
-                        }
-                        *latest_update.lock().unwrap() = Some(info);
-                    }
-                    Err(e) => {
-                        eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
-                        tray.set_up_to_date();
-                        if event.is_manual {
-                            let msg = format!(
-                                "Yangilanishlarni tekshirishda xatolik yuz berdi:\n{}\n\nIltimos, internet aloqasini tekshiring.",
-                                e
-                            );
-                            thread::spawn(move || {
-                                harfiy_platform::show_info_dialog("Harfiy - Xatolik", &msg);
-                            });
-                        }
-                    }
                 }
             }
         }
@@ -658,44 +435,6 @@ fn run_daemon(no_tray: bool) {
                         }
                         harfiy_platform::show_custom_hud("Statistika tozalandi", true);
                         println!("Statistika tozalandi.");
-                    }
-                    TrayCommand::CheckUpdates => {
-                        println!("GitHub Releases orqali yangilanishlar tekshirilmoqda...");
-                        tray.set_checking_updates();
-                        let repo = app_config.github_repo.clone();
-                        let tx = tx_update.clone();
-                        thread::spawn(move || {
-                            let start = std::time::Instant::now();
-                            let res = updater::check_for_updates(&repo);
-
-                            // Human-perceptible feedback: keep "⏳ Tekshirilmoqda..." active for at least 1 second
-                            let elapsed = start.elapsed();
-                            if elapsed < Duration::from_millis(1000) {
-                                thread::sleep(Duration::from_millis(1000) - elapsed);
-                            }
-
-                            let _ = tx.send(UpdateEvent {
-                                result: res,
-                                is_manual: true,
-                            });
-                        });
-                    }
-                    TrayCommand::DownloadUpdate => {
-                        let opt_info = latest_update.lock().unwrap().clone();
-                        let repo = app_config.github_repo.clone();
-                        thread::spawn(move || {
-                            let info = match opt_info {
-                                Some(i) => i,
-                                None => match updater::check_for_updates(&repo) {
-                                    Ok(i) => i,
-                                    Err(e) => {
-                                        eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
-                                        return;
-                                    }
-                                },
-                            };
-                            handle_interactive_update(&info);
-                        });
                     }
                     TrayCommand::Quit => {
                         println!("Tizim panelidan chiqish buyrug'i berildi.");
