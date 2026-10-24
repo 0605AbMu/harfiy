@@ -107,7 +107,7 @@ impl AppConfig {
         // Save default config
         let default_cfg = AppConfig::default();
         if let Ok(serialized) = toml::to_string_pretty(&default_cfg) {
-            let header = "# Harfiy Konfiguratsiya Fayli\n# Rasmiy veb-sahifa: https://abdumannon-shamsiyev.uz/harfiy\n# Relizlar: https://github.com/0605AbMu/harfiy-release\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
+            let header = "# Harfiy Konfiguratsiya Fayli\n# Rasmiy veb-sahifa: https://abdumannon-shamsiyev.uz/harfiy\n# Relizlar: https://github.com/0605AbMu/harfiy/releases\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
             let full_text = format!("{}{}", header, serialized);
             let _ = fs::write(&path, full_text);
         }
@@ -119,7 +119,7 @@ impl AppConfig {
     pub fn save(&self) -> Result<(), std::io::Error> {
         let path = Self::resolve_path();
         if let Ok(serialized) = toml::to_string_pretty(self) {
-            let header = "# Harfiy Konfiguratsiya Fayli\n# Rasmiy veb-sahifa: https://abdumannon-shamsiyev.uz/harfiy\n# Relizlar: https://github.com/0605AbMu/harfiy-release\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
+            let header = "# Harfiy Konfiguratsiya Fayli\n# Rasmiy veb-sahifa: https://abdumannon-shamsiyev.uz/harfiy\n# Relizlar: https://github.com/0605AbMu/harfiy/releases\n# Blog: https://t.me/abdumannon_notes\n# Support: https://t.me/abdumannon_shamsiyev\n\n";
             let full_text = format!("{}{}", header, serialized);
             fs::write(path, full_text)?;
         }

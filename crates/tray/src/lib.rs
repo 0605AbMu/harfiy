@@ -37,7 +37,7 @@ fn format_number(n: u64) -> String {
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
     for (i, &ch) in chars.iter().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push(' ');
         }
         result.push(ch);
@@ -262,6 +262,7 @@ pub struct TrayController {
 
 impl TrayController {
     /// Create and initialize the system tray icon, menu, and hotkey.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         initial_active: bool,
         has_permission: bool,
@@ -627,12 +628,12 @@ impl TrayController {
 
     /// Update stats display dynamically in the menu.
     pub fn update_stats(&self, conversions: u64) {
-        let _ = self.stats_count_item.set_text(format!(
+        self.stats_count_item.set_text(format!(
             "Jami o'zgartirishlar: {} ta",
             format_number(conversions)
         ));
         let minutes = calculate_time_saved(conversions);
-        let _ = self.stats_time_item.set_text(format!(
+        self.stats_time_item.set_text(format!(
             "Tejalgan vaqt: ~{} daqiqa",
             minutes
         ));

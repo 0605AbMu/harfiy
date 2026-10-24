@@ -701,10 +701,8 @@ fn check_is_game_fullscreen() -> bool {
                         pid_ref as core_foundation_sys::number::CFNumberRef,
                         core_foundation_sys::number::kCFNumberIntType,
                         &mut win_pid as *mut _ as *mut _,
-                    ) {
-                        if win_pid != pid {
-                            continue;
-                        }
+                    ) && win_pid != pid {
+                        continue;
                     }
                 }
 
@@ -719,10 +717,8 @@ fn check_is_game_fullscreen() -> bool {
                         layer_ref as core_foundation_sys::number::CFNumberRef,
                         core_foundation_sys::number::kCFNumberIntType,
                         &mut layer as *mut _ as *mut _,
-                    ) {
-                        if layer != 0 {
-                            continue;
-                        }
+                    ) && layer != 0 {
+                        continue;
                     }
                 }
 
@@ -739,15 +735,13 @@ fn check_is_game_fullscreen() -> bool {
                     if CGRectMakeWithDictionaryRepresentation(
                         bounds_ref as core_foundation_sys::dictionary::CFDictionaryRef,
                         &mut rect,
-                    ) {
-                        if rect.origin.x <= 0.0
-                            && rect.origin.y <= 0.0
-                            && rect.size.width >= display_bounds.size.width
-                            && rect.size.height >= display_bounds.size.height
-                        {
-                            is_full = true;
-                            break;
-                        }
+                    ) && rect.origin.x <= 0.0
+                        && rect.origin.y <= 0.0
+                        && rect.size.width >= display_bounds.size.width
+                        && rect.size.height >= display_bounds.size.height
+                    {
+                        is_full = true;
+                        break;
                     }
                 }
             }

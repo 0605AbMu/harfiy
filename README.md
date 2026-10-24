@@ -67,7 +67,7 @@ Agar avto-konvertatsiyadan so'ng (`sh` -> `ş`) foydalanuvchi darhol `Backspace`
 
 ## 📥 Yuklab Olish va O‘rnatish
 
-Tayyor dasturni **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/releases)** sahifasidan kompyuteringiz turiga mos holda yuklab oling:
+Tayyor dasturni **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)** sahifasidan kompyuteringiz turiga mos holda yuklab oling:
 
 ### 🍎 macOS (Apple Silicon M1/M2/M3/M4 va Intel)
 
@@ -151,7 +151,7 @@ convert_hotkey = "Ctrl+Alt+U"
 excluded_apps = []
 ```
 
-Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/releases)**
+Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)**
 
 ---
 
