@@ -100,22 +100,36 @@ fn run_check_updates_cli() {
             if info.has_update {
                 println!("\n⭐ Yangi versiya mavjud: v{}!", info.latest_version);
                 println!("Yuklab olish havolasi: {}", info.release_url);
-                println!("Dasturni o'z-o'zidan yangilashni xohlaysizmi? (h/y)");
+                println!("Dasturni yangilashni xohlaysizmi? (h/y)");
                 let mut buf = String::new();
                 let _ = std::io::stdin().read_line(&mut buf);
                 let choice = buf.trim().to_lowercase();
                 if choice == "h" || choice == "ha" || choice == "y" || choice == "yes" {
-                    println!("Yangilanish yuklab olinmoqda va o'rnatilmoqda...");
-                    match updater::perform_self_update(&cfg.github_repo, true) {
-                        Ok(new_ver) => {
-                            println!("✅ Harfiy muvaffaqiyatli v{} versiyasiga yangilandi!", new_ver);
-                        }
-                        Err(e) => {
-                            eprintln!("Yangilashda xatolik: {}", e);
-                            println!("Brauzerda yuklab olish sahifasi ochilmoqda...");
-                            let _ = open::that(&info.release_url);
+                    if let (Some(ref url), Some(ref name)) = (&info.installer_download_url, &info.installer_asset_name) {
+                        println!("O'rnatuvchi paket yuklab olinmoqda: {} ...", name);
+                        match updater::download_installer(url, name, |downloaded, total| {
+                            if let Some(t) = total {
+                                if t > 0 && downloaded % (512 * 1024) == 0 {
+                                    let pct = (downloaded as f64 / t as f64) * 100.0;
+                                    print!("\rYuklanmoqda: {:.1}% ({}/{} bayt)", pct, downloaded, t);
+                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                }
+                            }
+                        }) {
+                            Ok(path) => {
+                                println!("\n✅ Muvaffaqiyatli yuklab olindi: {}", path.display());
+                                println!("O'rnatuvchi ishga tushirilmoqda...");
+                                let _ = updater::launch_installer_and_exit(&path);
+                                return;
+                            }
+                            Err(e) => {
+                                eprintln!("\nYuklab olishda xatolik: {}", e);
+                            }
                         }
                     }
+
+                    println!("Brauzerda yuklab olish sahifasi ochilmoqda: {}", info.release_url);
+                    let _ = open::that(&info.release_url);
                 }
             } else {
                 println!("\n✅ Siz eng so'nggi versiyadan foydalanmoqdasiz.");
@@ -125,6 +139,81 @@ fn run_check_updates_cli() {
             eprintln!("Yangilanishni tekshirishda xatolik yuz berdi: {}", e);
         }
     }
+}
+
+/// Interactive update flow: prompts user, downloads installer with feedback, launches it and exits.
+fn handle_interactive_update(info: &UpdateInfo) {
+    let prompt_msg = format!(
+        "Harfiy dasturining yangi versiyasi mavjud!\n\n\
+         • Joriy versiya: v{}\n\
+         • Yangi versiya: v{}\n\n\
+         Yangi versiyani avtomatik yuklab olib, o'rnatishni boshlaysizmi?",
+        info.current_version, info.latest_version
+    );
+
+    if !harfiy_platform::show_confirm_dialog("Harfiy - Yangilanish mavjud", &prompt_msg) {
+        println!("Foydalanuvchi yangilanishni rad etdi.");
+        return;
+    }
+
+    println!("\n⭐ [YANGILANISH] Harfiy v{} yuklab olinmoqda...", info.latest_version);
+    harfiy_platform::show_custom_hud(
+        &format!("Harfiy v{} yuklab olinmoqda... Iltimos, kuting.", info.latest_version),
+        true,
+    );
+
+    if let (Some(ref url), Some(ref name)) = (&info.installer_download_url, &info.installer_asset_name) {
+        println!("O'rnatuvchi fayl: {}", name);
+        println!("Yuklab olish manzili: {}", url);
+
+        let dl_result = updater::download_installer(url, name, |downloaded, total| {
+            if let Some(t) = total {
+                if t > 0 && downloaded % (512 * 1024) == 0 {
+                    let pct = (downloaded as f64 / t as f64) * 100.0;
+                    println!("Yuklanmoqda: {:.1}% ({}/{} bayt)", pct, downloaded, t);
+                }
+            }
+        });
+
+        match dl_result {
+            Ok(installer_path) => {
+                println!("✅ Yangilanish muvaffaqiyatli yuklab olindi: {}", installer_path.display());
+                harfiy_platform::show_custom_hud(
+                    "Yangilanish yuklab olindi! O'rnatuvchi ishga tushirilmoqda...",
+                    true,
+                );
+                std::thread::sleep(Duration::from_millis(800));
+
+                if let Err(e) = updater::launch_installer_and_exit(&installer_path) {
+                    eprintln!("O'rnatuvchini ishga tushirishda xatolik: {}", e);
+                    let err_msg = format!(
+                        "O'rnatuvchi faylni ishga tushirib bo'lmadi:\n{}\n\nYuklab olish sahifasini brauzerda ochishni xohlaysizmi?",
+                        e
+                    );
+                    if harfiy_platform::show_confirm_dialog("Harfiy - Xatolik", &err_msg) {
+                        let _ = open::that(&info.release_url);
+                    }
+                }
+                return;
+            }
+            Err(e) => {
+                eprintln!("Yuklab olishda xatolik: {}", e);
+                let err_msg = format!(
+                    "Yangilanish paketini yuklab olishda xatolik yuz berdi:\n{}\n\nYuklab olish sahifasini brauzerda ochishni xohlaysizmi?",
+                    e
+                );
+                if harfiy_platform::show_confirm_dialog("Harfiy - Yangilashda xatolik", &err_msg) {
+                    let _ = open::that(&info.release_url);
+                }
+                return;
+            }
+        }
+    }
+
+    // Fallback if no matching installer was found in release assets
+    println!("Platforma uchun o'rnatuvchi topilmadi. Brauzerda ochilmoqda: {}", info.release_url);
+    harfiy_platform::show_custom_hud("Yangilanish sahifasi brauzerda ochilmoqda...", true);
+    let _ = open::that(&info.release_url);
 }
 
 fn open_telegram(domain: &str) {
@@ -438,26 +527,9 @@ fn run_daemon(no_tray: bool) {
                             tray.set_update_available(&info.latest_version);
 
                             if event.is_manual {
-                                let msg = format!(
-                                    "Harfiy dasturining yangi versiyasi mavjud!\n\nJoriy versiya: v{}\nYangi versiya: v{}\n\nIlovani hoziroq yangilashni xohlaysizmi?",
-                                    info.current_version, info.latest_version
-                                );
-                                let repo_clone = app_config.github_repo.clone();
-                                let download_url = info.release_url.clone();
+                                let info_clone = info.clone();
                                 thread::spawn(move || {
-                                    if harfiy_platform::show_confirm_dialog("Harfiy - Yangilanish mavjud", &msg) {
-                                        harfiy_platform::show_custom_hud("Yangilanish yuklab olinmoqda...", true);
-                                        match updater::perform_self_update(&repo_clone, false) {
-                                            Ok(new_ver) => {
-                                                harfiy_platform::show_custom_hud(&format!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver), true);
-                                                println!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver);
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Yangilashda xatolik: {}. Sahifa ochilmoqda...", e);
-                                                let _ = open::that(&download_url);
-                                            }
-                                        }
-                                    }
+                                    handle_interactive_update(&info_clone);
                                 });
                             }
                         } else {
@@ -608,21 +680,20 @@ fn run_daemon(no_tray: bool) {
                         });
                     }
                     TrayCommand::DownloadUpdate => {
+                        let opt_info = latest_update.lock().unwrap().clone();
                         let repo = app_config.github_repo.clone();
-                        let fallback_url = latest_update.lock().unwrap().as_ref().map(|i| i.release_url.clone()).unwrap_or_else(|| format!("https://github.com/{}", repo));
-                        println!("Ilova o'z-o'zidan yangilanmoqda: {}", repo);
-                        harfiy_platform::show_custom_hud("Yangilanish yuklab olinmoqda...", true);
                         thread::spawn(move || {
-                            match updater::perform_self_update(&repo, false) {
-                                Ok(new_ver) => {
-                                    harfiy_platform::show_custom_hud(&format!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver), true);
-                                    println!("Harfiy v{} ga muvaffaqiyatli yangilandi!", new_ver);
-                                }
-                                Err(e) => {
-                                    eprintln!("Yangilashda xatolik: {}. Sahifa ochilmoqda...", e);
-                                    let _ = open::that(&fallback_url);
-                                }
-                            }
+                            let info = match opt_info {
+                                Some(i) => i,
+                                None => match updater::check_for_updates(&repo) {
+                                    Ok(i) => i,
+                                    Err(e) => {
+                                        eprintln!("Yangilanishni tekshirishda xatolik: {}", e);
+                                        return;
+                                    }
+                                },
+                            };
+                            handle_interactive_update(&info);
                         });
                     }
                     TrayCommand::Quit => {
