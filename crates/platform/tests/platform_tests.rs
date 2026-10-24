@@ -1,4 +1,4 @@
-use harfiy_engine::{InputEvent, KeyAction, HarfiyEngine, SpecialKey};
+use harfiy_engine::{HarfiyEngine, InputEvent, KeyAction, SpecialKey};
 use harfiy_platform::{
     KeyboardEmitter, KeyboardInterceptor, MockEmittedEvent, MockInterceptor, MockPlatform,
 };
@@ -102,7 +102,11 @@ fn test_windows_interceptor_graceful_stop() {
     let _ = WindowsInterceptor::stop_hook();
     handle.join().unwrap();
     let elapsed = sw.elapsed();
-    assert!(elapsed < std::time::Duration::from_millis(500), "Stop took too long: {:?}", elapsed);
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "Stop took too long: {:?}",
+        elapsed
+    );
 }
 
 #[cfg(windows)]

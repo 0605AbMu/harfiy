@@ -14,8 +14,8 @@ use core_foundation_sys::runloop::{
     CFRunLoopRemoveSource, CFRunLoopRun, CFRunLoopSourceRef, CFRunLoopStop,
 };
 
-use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
+use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 
 /// Magic tag attached to synthetic keystrokes to prevent infinite interception loops.
 /// ASCII value for "HARF".
@@ -35,7 +35,9 @@ type CGEventTapCallBack = unsafe extern "C" fn(
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
-    fn AXIsProcessTrustedWithOptions(options: core_foundation_sys::dictionary::CFDictionaryRef) -> bool;
+    fn AXIsProcessTrustedWithOptions(
+        options: core_foundation_sys::dictionary::CFDictionaryRef,
+    ) -> bool;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -164,7 +166,11 @@ impl KeyboardEmitter for MacOsEmitter {
                 // Key Down (Virtual key 51 is Backspace on macOS)
                 let down = CGEventCreateKeyboardEvent(source, 51, true);
                 if !down.is_null() {
-                    CGEventSetIntegerValueField(down, kCGEventSourceUserData, HARFIY_MAGIC_FLAG as i64);
+                    CGEventSetIntegerValueField(
+                        down,
+                        kCGEventSourceUserData,
+                        HARFIY_MAGIC_FLAG as i64,
+                    );
                     CGEventPost(kCGSessionEventTap, down);
                     CFRelease(down as _);
                 }
@@ -172,7 +178,11 @@ impl KeyboardEmitter for MacOsEmitter {
                 // Key Up
                 let up = CGEventCreateKeyboardEvent(source, 51, false);
                 if !up.is_null() {
-                    CGEventSetIntegerValueField(up, kCGEventSourceUserData, HARFIY_MAGIC_FLAG as i64);
+                    CGEventSetIntegerValueField(
+                        up,
+                        kCGEventSourceUserData,
+                        HARFIY_MAGIC_FLAG as i64,
+                    );
                     CGEventPost(kCGSessionEventTap, up);
                     CFRelease(up as _);
                 }
@@ -201,7 +211,11 @@ impl KeyboardEmitter for MacOsEmitter {
                 let down = CGEventCreateKeyboardEvent(source, 0, true);
                 if !down.is_null() {
                     CGEventKeyboardSetUnicodeString(down, chunk.len() as _, chunk.as_ptr());
-                    CGEventSetIntegerValueField(down, kCGEventSourceUserData, HARFIY_MAGIC_FLAG as i64);
+                    CGEventSetIntegerValueField(
+                        down,
+                        kCGEventSourceUserData,
+                        HARFIY_MAGIC_FLAG as i64,
+                    );
                     CGEventPost(kCGSessionEventTap, down);
                     CFRelease(down as _);
                 }
@@ -210,7 +224,11 @@ impl KeyboardEmitter for MacOsEmitter {
                 let up = CGEventCreateKeyboardEvent(source, 0, false);
                 if !up.is_null() {
                     CGEventKeyboardSetUnicodeString(up, chunk.len() as _, chunk.as_ptr());
-                    CGEventSetIntegerValueField(up, kCGEventSourceUserData, HARFIY_MAGIC_FLAG as i64);
+                    CGEventSetIntegerValueField(
+                        up,
+                        kCGEventSourceUserData,
+                        HARFIY_MAGIC_FLAG as i64,
+                    );
                     CGEventPost(kCGSessionEventTap, up);
                     CFRelease(up as _);
                 }
@@ -331,9 +349,7 @@ impl KeyboardInterceptor for MacOsInterceptor {
         };
 
         // 3. Attach tap to current thread's CFRunLoop
-        let run_loop_source = unsafe {
-            CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        };
+        let run_loop_source = unsafe { CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) };
 
         if run_loop_source.is_null() {
             unsafe { CFRelease(tap as _) };
@@ -445,7 +461,9 @@ unsafe extern "C" fn macos_event_tap_callback(
 
     // Do not interfere if Command, Control, or Option (Alt) modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C)
     let flags = CGEventGetFlags(event);
-    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate)) != 0 {
+    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate))
+        != 0
+    {
         return event;
     }
 
@@ -532,7 +550,8 @@ pub fn is_current_app_excluded() -> bool {
             {
                 let cache = CACHED_FG_STATUS.lock().unwrap();
                 if let Some((ref cached_name, excluded, instant)) = *cache {
-                    if cached_name == &name_lower && instant.elapsed() < Duration::from_millis(200) {
+                    if cached_name == &name_lower && instant.elapsed() < Duration::from_millis(200)
+                    {
                         return excluded;
                     }
                 }
@@ -701,7 +720,8 @@ fn check_is_game_fullscreen() -> bool {
                         pid_ref as core_foundation_sys::number::CFNumberRef,
                         core_foundation_sys::number::kCFNumberIntType,
                         &mut win_pid as *mut _ as *mut _,
-                    ) && win_pid != pid {
+                    ) && win_pid != pid
+                    {
                         continue;
                     }
                 }
@@ -717,7 +737,8 @@ fn check_is_game_fullscreen() -> bool {
                         layer_ref as core_foundation_sys::number::CFNumberRef,
                         core_foundation_sys::number::kCFNumberIntType,
                         &mut layer as *mut _ as *mut _,
-                    ) && layer != 0 {
+                    ) && layer != 0
+                    {
                         continue;
                     }
                 }
@@ -796,7 +817,8 @@ pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
 </plist>"#,
                     exe_path.display()
                 );
-                std::fs::write(plist_path, content).map_err(|e| PlatformError::Other(e.to_string()))?;
+                std::fs::write(plist_path, content)
+                    .map_err(|e| PlatformError::Other(e.to_string()))?;
             } else if plist_path.exists() {
                 let _ = std::fs::remove_file(plist_path);
             }
@@ -897,7 +919,11 @@ pub fn show_confirm_dialog(title: &str, message: &str) -> bool {
         title.replace('"', "\\\""),
         message.replace('"', "\\\"")
     );
-    if let Ok(output) = std::process::Command::new("osascript").arg("-e").arg(script).output() {
+    if let Ok(output) = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+    {
         let resp = String::from_utf8_lossy(&output.stdout);
         return resp.trim() == "Ha";
     }

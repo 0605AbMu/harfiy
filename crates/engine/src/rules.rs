@@ -11,7 +11,7 @@ pub fn is_apostrophe(c: char) -> bool {
         | '’'       // U+2019 RIGHT SINGLE QUOTATION MARK
         | 'ʻ'       // U+02BB MODIFIER LETTER TURNED COMMA
         | 'ʼ'       // U+02BC MODIFIER LETTER APOSTROPHE
-        | '´'       // U+00B4 ACUTE ACCENT
+        | '´' // U+00B4 ACUTE ACCENT
     )
 }
 
@@ -26,10 +26,7 @@ pub fn is_word_delimiter(c: char) -> bool {
 
     c.is_whitespace()
         || c.is_ascii_punctuation()
-        || matches!(
-            c,
-            '—' | '–' | '…' | '«' | '»' | '“' | '”' | '„' | '•' | '№'
-        )
+        || matches!(c, '—' | '–' | '…' | '«' | '»' | '“' | '”' | '„' | '•' | '№')
 }
 
 /// Check if a character can be the first letter in a convertible pair.
@@ -86,7 +83,11 @@ pub fn convert_text(input: &str, enable_ng: bool, smart_apostrophe: bool) -> (St
 
     while i < len {
         let curr = chars[i];
-        let next = if i + 1 < len { Some(chars[i + 1]) } else { None };
+        let next = if i + 1 < len {
+            Some(chars[i + 1])
+        } else {
+            None
+        };
 
         let mut matched = false;
         if let Some(n) = next {
@@ -101,7 +102,11 @@ pub fn convert_text(input: &str, enable_ng: bool, smart_apostrophe: bool) -> (St
         if !matched {
             // Smart apostrophe (hamza / tutuq belgisi)
             if smart_apostrophe && (curr == '\'' || curr == '`') {
-                let prev_is_letter = if i > 0 { chars[i - 1].is_alphabetic() } else { false };
+                let prev_is_letter = if i > 0 {
+                    chars[i - 1].is_alphabetic()
+                } else {
+                    false
+                };
                 let next_is_letter = next.map(|c| c.is_alphabetic()).unwrap_or(false);
                 if prev_is_letter && next_is_letter {
                     result.push('ʻ'); // U+02BB modifier letter turned comma (official tutuq belgisi)

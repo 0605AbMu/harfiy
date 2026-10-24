@@ -4,6 +4,8 @@ version = "0.8.0"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "System tray and global hotkey management for Harfiy"
+license = "MIT"
+repository = "https://github.com/0605AbMu/harfiy"
 
 [dependencies]
 harfiy-engine = { path = "../engine" }

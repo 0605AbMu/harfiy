@@ -1,13 +1,14 @@
-use harfiy_engine::{
-    is_apostrophe, EngineConfig, HarfiyEngine, InputEvent, KeyAction, SpecialKey,
-};
+use harfiy_engine::{is_apostrophe, EngineConfig, HarfiyEngine, InputEvent, KeyAction, SpecialKey};
 
 #[test]
 fn test_all_sh_permutations() {
     let mut engine = HarfiyEngine::default();
 
     // lower: s + h -> ş
-    assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('s')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('h')),
         KeyAction::Transform {
@@ -17,7 +18,10 @@ fn test_all_sh_permutations() {
     );
 
     // Title: S + h -> Ş
-    assert_eq!(engine.process(InputEvent::Char('S')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('S')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('h')),
         KeyAction::Transform {
@@ -27,7 +31,10 @@ fn test_all_sh_permutations() {
     );
 
     // Upper: S + H -> Ş
-    assert_eq!(engine.process(InputEvent::Char('S')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('S')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('H')),
         KeyAction::Transform {
@@ -37,7 +44,10 @@ fn test_all_sh_permutations() {
     );
 
     // Inverted caps: s + H -> ş
-    assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('s')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('H')),
         KeyAction::Transform {
@@ -52,7 +62,10 @@ fn test_all_ch_permutations() {
     let mut engine = HarfiyEngine::default();
 
     // c + h -> ç
-    assert_eq!(engine.process(InputEvent::Char('c')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('c')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('h')),
         KeyAction::Transform {
@@ -62,7 +75,10 @@ fn test_all_ch_permutations() {
     );
 
     // C + h -> Ç
-    assert_eq!(engine.process(InputEvent::Char('C')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('C')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('h')),
         KeyAction::Transform {
@@ -72,7 +88,10 @@ fn test_all_ch_permutations() {
     );
 
     // C + H -> Ç
-    assert_eq!(engine.process(InputEvent::Char('C')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('C')),
+        KeyAction::PassThrough
+    );
     assert_eq!(
         engine.process(InputEvent::Char('H')),
         KeyAction::Transform {
@@ -201,8 +220,14 @@ fn test_delimiters_and_always_convert() {
     }
 
     // Now type "Is"
-    assert_eq!(engine.process(InputEvent::Char('I')), KeyAction::PassThrough);
-    assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('I')),
+        KeyAction::PassThrough
+    );
+    assert_eq!(
+        engine.process(InputEvent::Char('s')),
+        KeyAction::PassThrough
+    );
 
     // Typing 'h' ALWAYS converts!
     assert_eq!(
@@ -214,8 +239,14 @@ fn test_delimiters_and_always_convert() {
     );
 
     // Remaining chars
-    assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
-    assert_eq!(engine.process(InputEvent::Char('q')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('o')),
+        KeyAction::PassThrough
+    );
+    assert_eq!(
+        engine.process(InputEvent::Char('q')),
+        KeyAction::PassThrough
+    );
 }
 
 #[test]
@@ -225,8 +256,20 @@ fn test_disabled_engine_passes_everything() {
         enabled: false,
     });
 
-    assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
-    assert_eq!(engine.process(InputEvent::Char('h')), KeyAction::PassThrough);
-    assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
-    assert_eq!(engine.process(InputEvent::Char('\'')), KeyAction::PassThrough);
+    assert_eq!(
+        engine.process(InputEvent::Char('s')),
+        KeyAction::PassThrough
+    );
+    assert_eq!(
+        engine.process(InputEvent::Char('h')),
+        KeyAction::PassThrough
+    );
+    assert_eq!(
+        engine.process(InputEvent::Char('o')),
+        KeyAction::PassThrough
+    );
+    assert_eq!(
+        engine.process(InputEvent::Char('\'')),
+        KeyAction::PassThrough
+    );
 }

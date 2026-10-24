@@ -4,3 +4,9 @@
 *.pdb
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.log
+

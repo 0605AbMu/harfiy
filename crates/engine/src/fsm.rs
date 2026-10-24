@@ -574,9 +574,18 @@ mod tests {
         let mut engine = HarfiyEngine::default();
 
         // User types 'o', 's', 'a'
-        assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('a')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('o')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('s')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('a')),
+            KeyAction::PassThrough
+        );
 
         // User deletes 'a' with Backspace
         assert_eq!(
@@ -599,9 +608,18 @@ mod tests {
         let mut engine = HarfiyEngine::default();
 
         // User types 'o', 'g', 'x'
-        assert_eq!(engine.process(InputEvent::Char('o')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('g')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('x')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('o')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('g')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('x')),
+            KeyAction::PassThrough
+        );
 
         // Delete 'x'
         assert_eq!(
@@ -624,9 +642,18 @@ mod tests {
         let mut engine = HarfiyEngine::default();
 
         // Type 's', 'x', 'y'
-        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('x')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('y')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('s')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('x')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('y')),
+            KeyAction::PassThrough
+        );
 
         // Backspace twice
         assert_eq!(
@@ -654,14 +681,23 @@ mod tests {
         assert!(!engine.is_enable_ng());
 
         // Type 'n', 'g' without ng enabled -> pass through
-        assert_eq!(engine.process(InputEvent::Char('n')), KeyAction::PassThrough);
-        assert_eq!(engine.process(InputEvent::Char('g')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('n')),
+            KeyAction::PassThrough
+        );
+        assert_eq!(
+            engine.process(InputEvent::Char('g')),
+            KeyAction::PassThrough
+        );
 
         // Dynamically enable 'ng'
         engine.set_enable_ng(true);
         assert!(engine.is_enable_ng());
 
-        assert_eq!(engine.process(InputEvent::Char('n')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('n')),
+            KeyAction::PassThrough
+        );
         assert_eq!(
             engine.process(InputEvent::Char('g')),
             KeyAction::Transform {

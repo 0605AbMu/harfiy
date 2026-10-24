@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 use windows::Win32::Foundation::{
-    BOOL, CloseHandle, GetLastError, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+    CloseHandle, GetLastError, BOOL, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW,
@@ -30,10 +30,9 @@ use windows::Win32::UI::Controls::Dialogs::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
-    INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
-    VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE,
-    VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RWIN,
-    VK_SHIFT, VK_TAB, VK_UP,
+    INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY,
+    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT,
+    VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows,
@@ -42,8 +41,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostQuitMessage, PostThreadMessageW, RegisterClassW, SetLayeredWindowAttributes, SetTimer,
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES,
     KBDLLHOOKSTRUCT, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG,
-    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP, WM_DESTROY,
-    WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP,
+    WM_DESTROY, WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
@@ -310,7 +309,8 @@ unsafe extern "system" fn hud_wnd_proc(
             };
 
             let full_text = format!("{}  {}", indicator, status_text);
-            let mut text_wide: Vec<u16> = full_text.encode_utf16().chain(std::iter::once(0)).collect();
+            let mut text_wide: Vec<u16> =
+                full_text.encode_utf16().chain(std::iter::once(0)).collect();
 
             SetTextColor(hdc, color);
             DrawTextW(
@@ -477,7 +477,10 @@ pub fn pick_executable_dialog() -> Option<String> {
 
     unsafe {
         if GetOpenFileNameW(&mut ofn).as_bool() {
-            let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+            let len = file_buf
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(file_buf.len());
             let path_str = String::from_utf16_lossy(&file_buf[..len]);
             let path = std::path::Path::new(&path_str);
             if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
@@ -488,7 +491,8 @@ pub fn pick_executable_dialog() -> Option<String> {
     None
 }
 
-const AUTOSTART_SUBKEY: windows::core::PCWSTR = windows::core::w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+const AUTOSTART_SUBKEY: windows::core::PCWSTR =
+    windows::core::w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const AUTOSTART_NAME: windows::core::PCWSTR = windows::core::w!("Harfiy");
 
 /// Check if Harfiy is configured to run on Windows startup in Registry.
@@ -497,14 +501,7 @@ pub fn is_autostart_enabled() -> bool {
         let mut hkey = HKEY::default();
         if RegOpenKeyExW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, 0, KEY_READ, &mut hkey).is_ok() {
             let mut buf_len = 0u32;
-            let res = RegQueryValueExW(
-                hkey,
-                AUTOSTART_NAME,
-                None,
-                None,
-                None,
-                Some(&mut buf_len),
-            );
+            let res = RegQueryValueExW(hkey, AUTOSTART_NAME, None, None, None, Some(&mut buf_len));
             let _ = RegCloseKey(hkey);
             res.is_ok() && buf_len > 0
         } else {
@@ -536,17 +533,8 @@ pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
                 .map_err(|e| PlatformError::HookInstallationFailed(e.to_string()))?;
             let cmd = format!("\"{}\" start", exe_path.display());
             let wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
-            let slice = std::slice::from_raw_parts(
-                wide.as_ptr() as *const u8,
-                wide.len() * 2,
-            );
-            let res = RegSetValueExW(
-                hkey,
-                AUTOSTART_NAME,
-                0,
-                REG_SZ,
-                Some(slice),
-            );
+            let slice = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+            let res = RegSetValueExW(hkey, AUTOSTART_NAME, 0, REG_SZ, Some(slice));
             let _ = RegCloseKey(hkey);
             if !res.is_ok() {
                 return Err(PlatformError::HookInstallationFailed(format!(
@@ -843,12 +831,7 @@ impl KeyboardEmitter for WindowsEmitter {
             });
         }
 
-        let sent = unsafe {
-            SendInput(
-                &inputs,
-                std::mem::size_of::<INPUT>() as i32,
-            )
-        };
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
 
         if sent as usize != inputs.len() {
             return Err(PlatformError::SendInputFailed(format!(
@@ -897,12 +880,7 @@ impl KeyboardEmitter for WindowsEmitter {
             });
         }
 
-        let sent = unsafe {
-            SendInput(
-                &inputs,
-                std::mem::size_of::<INPUT>() as i32,
-            )
-        };
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
 
         if sent as usize != inputs.len() {
             return Err(PlatformError::SendInputFailed(format!(
@@ -966,15 +944,9 @@ impl KeyboardInterceptor for WindowsInterceptor {
         let thread_id = unsafe { GetCurrentThreadId() };
         HOOK_THREAD_ID.store(thread_id, Ordering::SeqCst);
 
-        let hook_handle = unsafe {
-            SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(low_level_keyboard_proc),
-                None,
-                0,
-            )
-        }
-        .map_err(|e| PlatformError::HookInstallationFailed(e.to_string()))?;
+        let hook_handle =
+            unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), None, 0) }
+                .map_err(|e| PlatformError::HookInstallationFailed(e.to_string()))?;
 
         {
             let mut state_guard = HOOK_STATE.lock().unwrap();
@@ -1063,16 +1035,7 @@ fn vk_to_unicode(vk: VIRTUAL_KEY, scan_code: u32) -> Option<char> {
     let hkl = unsafe { GetKeyboardLayout(0) };
 
     // wFlags = 4 prevents altering dead key status on modern Windows
-    let count = unsafe {
-        ToUnicodeEx(
-            vk.0 as u32,
-            scan_code,
-            &key_state,
-            &mut buffer,
-            4,
-            hkl,
-        )
-    };
+    let count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, hkl) };
 
     if count == 1 {
         char::from_u32(buffer[0] as u32)

@@ -1,8 +1,8 @@
 //! Mock platform implementations for testing without OS dependencies.
 
-use std::sync::{Arc, Mutex};
-use harfiy_engine::{InputEvent, KeyAction};
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
+use harfiy_engine::{InputEvent, KeyAction};
+use std::sync::{Arc, Mutex};
 
 /// Recorded event in the mock emitter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,12 +35,18 @@ impl MockEmitter {
 
 impl KeyboardEmitter for MockEmitter {
     fn emit_backspace(&mut self, count: usize) -> Result<(), PlatformError> {
-        self.events.lock().unwrap().push(MockEmittedEvent::Backspace(count));
+        self.events
+            .lock()
+            .unwrap()
+            .push(MockEmittedEvent::Backspace(count));
         Ok(())
     }
 
     fn emit_unicode(&mut self, text: &str) -> Result<(), PlatformError> {
-        self.events.lock().unwrap().push(MockEmittedEvent::Unicode(text.to_string()));
+        self.events
+            .lock()
+            .unwrap()
+            .push(MockEmittedEvent::Unicode(text.to_string()));
         Ok(())
     }
 }

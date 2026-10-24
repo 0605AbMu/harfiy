@@ -159,20 +159,14 @@ Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](htt
 
 Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **GitHub Actions** orqali avtomatlashtirilgan.
 
-### 1. Release chiqarish usullari:
+### 1. Release chiqarish:
 
-* **1-usul: Git Tag orqali (Tavsiya etiladi)**
-  ```bash
-  # Yangi versiya tegi yaratish va yuborish
-  git tag v0.1.0
-  git push origin v0.1.0
-  ```
-
-* **2-usul: GitHub Actions veb-interfeysi orqali (Bitta tugma bilan)**
-  1. GitHub repozitoriyida **Actions** bo‘limiga o‘ting.
-  2. Chap tomondan **Bump Version & Trigger Release** workflow'ini tanlang.
-  3. **Run workflow** tugmasini bosib, yangi versiyani kiriting (masalan: `0.2.0`).
-  4. Workflow avtomatik ravishda `Cargo.toml` fayllarini yangilaydi, commit qiladi, teg qo‘yadi va relizni boshlaydi.
+Yangi versiya relizi avtomatik yig'ilishi va chiqarilishi uchun Git tag qo'yib push qilish kifoya:
+```bash
+# Yangi versiya tegi yaratish va yuborish (masalan: 0.8.0)
+git tag 0.8.0
+git push origin 0.8.0
+```
 
 ### 2. Avtomatik Yig'iladigan O'rnatuvchi Paketlar (Installers):
 * 🪟 **Windows (`.exe` Installer):** `harfiy-vX.Y.Z-windows-x86_64-setup.exe`
@@ -193,7 +187,7 @@ Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **
 
 | Ko'rsatkich | Talab (TZ) | Haqiqiy Natija |
 | :--- | :--- | :--- |
-| **Static Binary Hajmi** | `< 10 MB` | **0.81 MB** (844 KB) *(LTO va strip yoqilgan)* |
+| **Static Binary Hajmi** | `< 10 MB` | **1.1 MB** *(LTO va strip yoqilgan, tarmoq kutubxonalarisiz)* |
 | **Kechikish (Latency)** | `< 1 ms` | **< 0.05 ms** (sub-millisecond) |
 | **RAM Sarfi** | `< 15 MB` | **< 8 MB** |
 | **Xavfsizlik** | Tarmoqsiz (Isolated) | Tarmoq kutubxonalari mavjud emas |

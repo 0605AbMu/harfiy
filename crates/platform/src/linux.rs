@@ -1,7 +1,7 @@
 //! Linux implementation of keyboard interceptor and emitter using evdev and /dev/uinput.
 
-use harfiy_engine::{InputEvent, KeyAction};
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
+use harfiy_engine::{InputEvent, KeyAction};
 
 /// Synthetic keyboard event emitter for Linux using /dev/uinput.
 #[derive(Debug, Clone, Default)]

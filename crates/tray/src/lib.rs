@@ -106,8 +106,8 @@ fn clear_submenu(submenu: &Submenu) {
 
 #[cfg(target_os = "macos")]
 pub fn init_macos_app() {
-    use objc2_foundation::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    use objc2_foundation::MainThreadMarker;
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApplication::sharedApplication(mtm);
         app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
@@ -117,8 +117,8 @@ pub fn init_macos_app() {
 
 #[cfg(target_os = "macos")]
 pub fn pump_macos_events() {
-    use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode};
     use objc2_app_kit::{NSApplication, NSEventMask};
+    use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode};
     if let Some(mtm) = MainThreadMarker::new() {
         let app = NSApplication::sharedApplication(mtm);
         unsafe {
@@ -285,29 +285,34 @@ impl TrayController {
         let autostart = Arc::new(AtomicBool::new(initial_autostart));
         let game_mode = Arc::new(AtomicBool::new(initial_game_mode));
         let last_hotkey_press = Arc::new(Mutex::new(
-            Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+            Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .unwrap_or_else(Instant::now),
         ));
         let last_convert_hotkey_press = Arc::new(Mutex::new(
-            Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+            Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .unwrap_or_else(Instant::now),
         ));
 
         // Parse accelerator for menu item hints
-        let accelerator: Option<Accelerator> = hotkey_str
-            .parse()
-            .ok()
-            .or_else(|| {
-                Some(Accelerator::new(
-                    Some(tray_icon::menu::accelerator::Modifiers::CONTROL | tray_icon::menu::accelerator::Modifiers::SHIFT),
-                    tray_icon::menu::accelerator::Code::KeyU,
-                ))
-            });
+        let accelerator: Option<Accelerator> = hotkey_str.parse().ok().or_else(|| {
+            Some(Accelerator::new(
+                Some(
+                    tray_icon::menu::accelerator::Modifiers::CONTROL
+                        | tray_icon::menu::accelerator::Modifiers::SHIFT,
+                ),
+                tray_icon::menu::accelerator::Code::KeyU,
+            ))
+        });
 
-        let convert_accelerator: Option<Accelerator> = convert_hotkey_str
-            .parse()
-            .ok()
-            .or_else(|| {
+        let convert_accelerator: Option<Accelerator> =
+            convert_hotkey_str.parse().ok().or_else(|| {
                 Some(Accelerator::new(
-                    Some(tray_icon::menu::accelerator::Modifiers::CONTROL | tray_icon::menu::accelerator::Modifiers::ALT),
+                    Some(
+                        tray_icon::menu::accelerator::Modifiers::CONTROL
+                            | tray_icon::menu::accelerator::Modifiers::ALT,
+                    ),
                     tray_icon::menu::accelerator::Code::KeyU,
                 ))
             });
@@ -339,8 +344,10 @@ impl TrayController {
 
         // 3. Option checkboxes
         let ng_item = CheckMenuItem::new("'ng' -> 'ñ' qoidasi", true, initial_ng, None);
-        let autostart_item = CheckMenuItem::new("Avtomatik ishga tushish", true, initial_autostart, None);
-        let game_mode_item = CheckMenuItem::new("O'yinlarda avtomatik pauza", true, initial_game_mode, None);
+        let autostart_item =
+            CheckMenuItem::new("Avtomatik ishga tushish", true, initial_autostart, None);
+        let game_mode_item =
+            CheckMenuItem::new("O'yinlarda avtomatik pauza", true, initial_game_mode, None);
 
         // 4. Excluded apps submenu (clean text)
         let excluded_submenu = Submenu::new("Istisno dasturlar", true);
@@ -349,17 +356,17 @@ impl TrayController {
         // 5. Statistics submenu
         let stats_submenu = Submenu::new("Statistika", true);
         let stats_count_item = IconMenuItem::new(
-            format!("Jami o'zgartirishlar: {} ta", format_number(total_conversions)),
+            format!(
+                "Jami o'zgartirishlar: {} ta",
+                format_number(total_conversions)
+            ),
             false,
             make_menu_icon(MENU_STATS_16),
             None,
         );
         let minutes = calculate_time_saved(total_conversions);
-        let stats_time_item = MenuItem::new(
-            format!("Tejalgan vaqt: ~{} daqiqa", minutes),
-            false,
-            None,
-        );
+        let stats_time_item =
+            MenuItem::new(format!("Tejalgan vaqt: ~{} daqiqa", minutes), false, None);
         let stats_clear_item = IconMenuItem::with_id(
             "clear_stats",
             "Statistikani tozalash",
@@ -451,21 +458,23 @@ impl TrayController {
             .map_err(|e| TrayError::TrayInit(e.to_string()))?;
 
         // Setup Global Hotkeys
-        let hotkey_manager = GlobalHotKeyManager::new()
-            .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
+        let hotkey_manager =
+            GlobalHotKeyManager::new().map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let hotkey: HotKey = hotkey_str
-            .parse()
-            .unwrap_or_else(|_| HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU));
+        let hotkey: HotKey = hotkey_str.parse().unwrap_or_else(|_| {
+            HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU)
+        });
 
         hotkey_manager
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let convert_hotkey: Option<HotKey> = convert_hotkey_str
-            .parse()
-            .ok()
-            .or_else(|| Some(HotKey::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyU)));
+        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok().or_else(|| {
+            Some(HotKey::new(
+                Some(Modifiers::CONTROL | Modifiers::ALT),
+                Code::KeyU,
+            ))
+        });
 
         if let Some(chk) = convert_hotkey {
             let _ = hotkey_manager.register(chk);
@@ -545,7 +554,8 @@ impl TrayController {
             } else if let Some(chk) = self.convert_hotkey {
                 if event.id == chk.id() {
                     let should_convert = match event.state {
-                        global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
+                        global_hotkey::HotKeyState::Pressed
+                        | global_hotkey::HotKeyState::Released => {
                             let mut last = self.last_convert_hotkey_press.lock().unwrap();
                             if last.elapsed() >= Duration::from_millis(300) {
                                 *last = Instant::now();
@@ -633,10 +643,8 @@ impl TrayController {
             format_number(conversions)
         ));
         let minutes = calculate_time_saved(conversions);
-        self.stats_time_item.set_text(format!(
-            "Tejalgan vaqt: ~{} daqiqa",
-            minutes
-        ));
+        self.stats_time_item
+            .set_text(format!("Tejalgan vaqt: ~{} daqiqa", minutes));
     }
 
     /// Update 'ng' rule toggle state.
@@ -688,12 +696,12 @@ pub struct StandaloneHotKey {
 
 impl StandaloneHotKey {
     pub fn new(hotkey_str: &str, convert_hotkey_str: &str) -> Result<Self, TrayError> {
-        let hotkey_manager = GlobalHotKeyManager::new()
-            .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
+        let hotkey_manager =
+            GlobalHotKeyManager::new().map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let hotkey: HotKey = hotkey_str
-            .parse()
-            .unwrap_or_else(|_| HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU));
+        let hotkey: HotKey = hotkey_str.parse().unwrap_or_else(|_| {
+            HotKey::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyU)
+        });
 
         hotkey_manager
             .register(hotkey)
@@ -709,10 +717,14 @@ impl StandaloneHotKey {
             hotkey,
             convert_hotkey,
             last_press: Mutex::new(
-                Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+                Instant::now()
+                    .checked_sub(Duration::from_secs(5))
+                    .unwrap_or_else(Instant::now),
             ),
             last_convert_press: Mutex::new(
-                Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now),
+                Instant::now()
+                    .checked_sub(Duration::from_secs(5))
+                    .unwrap_or_else(Instant::now),
             ),
         })
     }
@@ -739,7 +751,8 @@ impl StandaloneHotKey {
             } else if let Some(chk) = self.convert_hotkey {
                 if event.id == chk.id() {
                     let should_convert = match event.state {
-                        global_hotkey::HotKeyState::Pressed | global_hotkey::HotKeyState::Released => {
+                        global_hotkey::HotKeyState::Pressed
+                        | global_hotkey::HotKeyState::Released => {
                             let mut last = self.last_convert_press.lock().unwrap();
                             if last.elapsed() >= Duration::from_millis(300) {
                                 *last = Instant::now();
@@ -782,7 +795,10 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg_attr(target_os = "macos", ignore = "muda MenuChild requires macOS main thread")]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "muda MenuChild requires macOS main thread"
+    )]
     fn test_populate_excluded_submenu() {
         let sub = Submenu::new("Istisno dasturlar", true);
         let excluded = vec!["code.exe".to_string()];

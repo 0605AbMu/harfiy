@@ -14,10 +14,10 @@ use clap::{Parser, Subcommand};
 use harfiy_engine::{EngineConfig, HarfiyEngine};
 #[cfg(windows)]
 use harfiy_platform::{pump_messages, KeyboardInterceptor, WindowsInterceptor};
-#[cfg(target_os = "macos")]
-use harfiy_platform::{KeyboardInterceptor, MacOsInterceptor};
 #[cfg(target_os = "linux")]
 use harfiy_platform::{KeyboardInterceptor, LinuxInterceptor};
+#[cfg(target_os = "macos")]
+use harfiy_platform::{KeyboardInterceptor, MacOsInterceptor};
 use harfiy_tray::{StandaloneHotKey, TrayCommand, TrayController};
 
 use crate::config::AppConfig;
@@ -107,7 +107,8 @@ fn perform_quick_convert(
                 harfiy_platform::set_clipboard_text(&converted);
                 harfiy_platform::emit_paste();
 
-                let new_total = conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
+                let new_total =
+                    conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
                 app_config.total_conversions = new_total;
                 let _ = app_config.save();
 
@@ -119,7 +120,10 @@ fn perform_quick_convert(
                     &format!("Matn o'girildi ({} ta harf)", count),
                     true,
                 );
-                println!("Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.", count);
+                println!(
+                    "Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.",
+                    count
+                );
             } else {
                 harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
             }
@@ -214,7 +218,8 @@ fn run_daemon(no_tray: bool) {
         let conversions_worker = Arc::clone(&conversions_counter);
         let engine_worker = Arc::clone(&engine);
         thread::spawn(move || {
-            while is_running_worker.load(Ordering::SeqCst) && !MacOsInterceptor::is_stop_requested() {
+            while is_running_worker.load(Ordering::SeqCst) && !MacOsInterceptor::is_stop_requested()
+            {
                 let mut interceptor = MacOsInterceptor::new();
                 let eng_hook = Arc::clone(&engine_worker);
                 let conv_worker = Arc::clone(&conversions_worker);
@@ -231,7 +236,9 @@ fn run_daemon(no_tray: bool) {
                     eprintln!("macOS interceptor xatoligi: {}", e);
                 }
 
-                if !is_running_worker.load(Ordering::SeqCst) || MacOsInterceptor::is_stop_requested() {
+                if !is_running_worker.load(Ordering::SeqCst)
+                    || MacOsInterceptor::is_stop_requested()
+                {
                     break;
                 }
 
@@ -290,11 +297,17 @@ fn run_daemon(no_tray: bool) {
                     "Tizim paneli (System Tray) yaratilmadi: {}. Konsol rejimida davom etilmoqda.",
                     e
                 );
-                (None, StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok())
+                (
+                    None,
+                    StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok(),
+                )
             }
         }
     } else {
-        (None, StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok())
+        (
+            None,
+            StandaloneHotKey::new(&app_config.hotkey, &app_config.convert_hotkey).ok(),
+        )
     };
 
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
@@ -405,26 +418,46 @@ fn run_daemon(no_tray: bool) {
                             eng.set_enable_ng(enabled);
                         }
                         harfiy_platform::show_custom_hud(
-                            if enabled { "'ng' -> 'ñ' qoidasi yoqildi" } else { "'ng' -> 'ñ' qoidasi o'chirildi" },
+                            if enabled {
+                                "'ng' -> 'ñ' qoidasi yoqildi"
+                            } else {
+                                "'ng' -> 'ñ' qoidasi o'chirildi"
+                            },
                             true,
                         );
-                        println!("'ng' -> 'ñ' qoidasi: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                        println!(
+                            "'ng' -> 'ñ' qoidasi: {}",
+                            if enabled { "Yoqildi" } else { "O'chirildi" }
+                        );
                     }
                     TrayCommand::ToggleAutostart(enabled) => {
                         let _ = harfiy_platform::set_autostart(enabled);
-                        let hud_msg = format!("Avtomatik ishga tushish {}", if enabled { "yoqildi" } else { "o'chirildi" });
+                        let hud_msg = format!(
+                            "Avtomatik ishga tushish {}",
+                            if enabled { "yoqildi" } else { "o'chirildi" }
+                        );
                         harfiy_platform::show_custom_hud(&hud_msg, true);
-                        println!("Avtomatik ishga tushish: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                        println!(
+                            "Avtomatik ishga tushish: {}",
+                            if enabled { "Yoqildi" } else { "O'chirildi" }
+                        );
                     }
                     TrayCommand::ToggleGameMode(enabled) => {
                         app_config.game_mode = enabled;
                         let _ = app_config.save();
                         harfiy_platform::set_game_mode(enabled);
                         harfiy_platform::show_custom_hud(
-                            if enabled { "O'yinlarda avtomatik pauza yoqildi" } else { "O'yinlarda avtomatik pauza o'chirildi" },
+                            if enabled {
+                                "O'yinlarda avtomatik pauza yoqildi"
+                            } else {
+                                "O'yinlarda avtomatik pauza o'chirildi"
+                            },
                             true,
                         );
-                        println!("O'yinlarda avtomatik pauza: {}", if enabled { "Yoqildi" } else { "O'chirildi" });
+                        println!(
+                            "O'yinlarda avtomatik pauza: {}",
+                            if enabled { "Yoqildi" } else { "O'chirildi" }
+                        );
                     }
                     TrayCommand::ClearStats => {
                         conversions_counter.store(0, Ordering::SeqCst);
