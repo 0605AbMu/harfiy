@@ -372,6 +372,8 @@ fn run_daemon(no_tray: bool) {
     let mut last_scan = std::time::Instant::now();
     let mut last_perm_check = std::time::Instant::now();
     let mut last_perm_state = initial_permission;
+    let mut last_periodic_update_check = std::time::Instant::now();
+    let periodic_update_interval = Duration::from_secs(4 * 3600); // Har 4 soatda avtomatik tekshirish
 
     // Main event loop
     while is_running.load(Ordering::SeqCst) {
@@ -409,6 +411,20 @@ fn run_daemon(no_tray: bool) {
                     tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
                 }
             }
+        }
+
+        // Periodically check for updates in the background (every 4 hours)
+        if app_config.check_updates && last_periodic_update_check.elapsed() >= periodic_update_interval {
+            last_periodic_update_check = std::time::Instant::now();
+            let repo = app_config.github_repo.clone();
+            let tx = tx_update.clone();
+            thread::spawn(move || {
+                let res = updater::check_for_updates(&repo);
+                let _ = tx.send(UpdateEvent {
+                    result: res,
+                    is_manual: false,
+                });
+            });
         }
 
         // Process asynchronous update notifications
