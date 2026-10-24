@@ -2,6 +2,8 @@
 
 **Harfiy** — zamonaviy o‘zbek lotin alifbosidagi harf birikmalarini (`sh`, `ch`, `o'`, `g'`) real vaqt rejimida yozish paytida yangi unikal grafemalarga (`ş`, `ç`, `ö`, `ğ`) kechikishsiz (sub-millisecond) va uzluksiz almashtirib beruvchi tizim darajasidagi fon xizmati (daemon).
 
+🌐 **Rasmiy veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)
+
 Loyiha to'liq **Rust** tilida, xavfsiz, nol xotira yuklamasi (zero-cost abstractions) va qat'iy determinizm tamoyillari asosida ishlab chiqilgan.
 
 ---
@@ -203,6 +205,7 @@ Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **
 ## 👨‍💻 Muallif va Aloqa
 
 * **Muallif va Publisher:** Abdumannon Shamsiyev
+* **Rasmiy Veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)
 * **Blog:** [@abdumannon_notes](https://t.me/abdumannon_notes) *(Deep link: `tg://resolve?domain=abdumannon_notes`)*
 * **Qo'llab-quvvatlash (Support):** [@abdumannon_shamsiyev](https://t.me/abdumannon_shamsiyev) *(Deep link: `tg://resolve?domain=abdumannon_shamsiyev`)*
 * **LinkedIn:** [linkedin.com/in/abdumannon-shamsiyev](https://www.linkedin.com/in/abdumannon-shamsiyev)

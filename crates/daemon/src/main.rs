@@ -286,6 +286,7 @@ fn run_daemon(no_tray: bool) {
     let conversions_counter = Arc::new(AtomicU64::new(app_config.total_conversions));
 
     println!("Harfiy v{} faollashtirilmoqda...", current_ver);
+    println!("Rasmiy veb-sahifa: https://abdumannon-shamsiyev.uz/harfiy");
     println!("Sozlamalar fayli: {}", config_path.display());
     println!("Blog: https://t.me/abdumannon_notes");
     println!("Qo'llab-quvvatlash: https://t.me/abdumannon_shamsiyev");
@@ -773,6 +774,11 @@ fn run_daemon(no_tray: bool) {
                         tray.update_excluded_apps(&app_config.excluded_apps, &running_apps);
                         harfiy_platform::show_custom_hud("Barcha istisnolar tozalandi", true);
                         println!("Barcha istisno dasturlar tozalandi.");
+                    }
+                    TrayCommand::OpenWebPage => {
+                        let url = "https://abdumannon-shamsiyev.uz/harfiy";
+                        println!("Rasmiy veb-sahifa ochilmoqda: {}", url);
+                        let _ = open::that(url);
                     }
                     TrayCommand::OpenBlog => {
                         println!("Telegram blog ochilmoqda: tg://resolve?domain=abdumannon_notes (@abdumannon_notes)");

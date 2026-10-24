@@ -17,6 +17,7 @@ const TRAY_ACTIVE_32: &[u8] = include_bytes!("../../../assets/tray_active_32.rgb
 const TRAY_PAUSED_32: &[u8] = include_bytes!("../../../assets/tray_paused_32.rgba");
 
 const MENU_BLOG_16: &[u8] = include_bytes!("../../../assets/menu_blog_16.rgba");
+const MENU_WEB_16: &[u8] = include_bytes!("../../../assets/menu_web_16.rgba");
 const MENU_SUPPORT_16: &[u8] = include_bytes!("../../../assets/menu_support_16.rgba");
 const MENU_CHECK_16: &[u8] = include_bytes!("../../../assets/menu_check_16.rgba");
 const MENU_STAR_16: &[u8] = include_bytes!("../../../assets/menu_star_16.rgba");
@@ -79,6 +80,7 @@ pub enum TrayCommand {
     RemoveExcludedApp(String),
     ClearAllExcludedApps,
     ClearStats,
+    OpenWebPage,
     OpenBlog,
     OpenSupport,
     OpenPermissionSettings,
@@ -252,6 +254,7 @@ pub struct TrayController {
     stats_time_item: MenuItem,
     _version_item: MenuItem,
     update_item: IconMenuItem,
+    web_item: IconMenuItem,
     blog_item: IconMenuItem,
     support_item: IconMenuItem,
     quit_item: MenuItem,
@@ -390,7 +393,14 @@ impl TrayController {
             None,
         );
 
-        // 8. Telegram links: Blog & Support with real icons and short text
+        // 8. Web & Telegram links: Web, Blog & Support with real icons and short text
+        let web_item = IconMenuItem::with_id(
+            "open_web",
+            "Veb-sahifa",
+            true,
+            make_menu_icon(MENU_WEB_16),
+            None,
+        );
         let blog_item = IconMenuItem::with_id(
             "open_blog",
             "Blog",
@@ -436,6 +446,7 @@ impl TrayController {
                 &version_item,
                 &update_item,
                 &sep4,
+                &web_item,
                 &blog_item,
                 &support_item,
                 &sep5,
@@ -496,6 +507,7 @@ impl TrayController {
             stats_time_item,
             _version_item: version_item,
             update_item,
+            web_item,
             blog_item,
             support_item,
             quit_item,
@@ -601,6 +613,8 @@ impl TrayController {
                 } else {
                     return Some(TrayCommand::CheckUpdates);
                 }
+            } else if event.id == self.web_item.id() {
+                return Some(TrayCommand::OpenWebPage);
             } else if event.id == self.blog_item.id() {
                 return Some(TrayCommand::OpenBlog);
             } else if event.id == self.support_item.id() {
@@ -619,6 +633,8 @@ impl TrayController {
                     return Some(TrayCommand::RemoveExcludedApp(app.to_string()));
                 } else if let Some(app) = id_str.strip_prefix("add_running:") {
                     return Some(TrayCommand::AddExcludedApp(app.to_string()));
+                } else if id_str == "open_web" {
+                    return Some(TrayCommand::OpenWebPage);
                 } else if id_str == "open_blog" {
                     return Some(TrayCommand::OpenBlog);
                 } else if id_str == "open_support" {
