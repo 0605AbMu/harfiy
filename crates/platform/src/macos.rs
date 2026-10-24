@@ -11,7 +11,7 @@ use core_foundation::string::CFString;
 use core_foundation_sys::base::{kCFAllocatorDefault, CFIndex, CFRelease};
 use core_foundation_sys::runloop::{
     kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetCurrent, CFRunLoopRef,
-    CFRunLoopRun, CFRunLoopSourceRef, CFRunLoopStop,
+    CFRunLoopRemoveSource, CFRunLoopRun, CFRunLoopSourceRef, CFRunLoopStop,
 };
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
@@ -35,7 +35,6 @@ type CGEventTapCallBack = unsafe extern "C" fn(
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
-    fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: core_foundation_sys::dictionary::CFDictionaryRef) -> bool;
 }
 
@@ -236,6 +235,7 @@ struct HookState {
 unsafe impl Send for HookState {}
 
 static HOOK_STATE: Mutex<Option<HookState>> = Mutex::new(None);
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// macOS keyboard interceptor using CGEventTap.
 #[derive(Default)]
@@ -246,9 +246,15 @@ impl MacOsInterceptor {
         Self
     }
 
-    /// Check if the application has Accessibility permissions (AXIsProcessTrusted).
+    /// Check if the application has Accessibility permissions (AXIsProcessTrustedWithOptions).
+    /// Uses AXTrustedCheckOptionPrompt: false to query live status without using stale cached process state.
     pub fn is_accessibility_trusted() -> bool {
-        unsafe { AXIsProcessTrusted() }
+        unsafe {
+            let key = CFString::from_static_string("AXTrustedCheckOptionPrompt");
+            let value = CFBoolean::false_value();
+            let dict = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), value.as_CFType())]);
+            AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef())
+        }
     }
 
     /// Prompt system to show Accessibility settings dialog if not already trusted.
@@ -261,8 +267,13 @@ impl MacOsInterceptor {
         }
     }
 
+    pub fn is_stop_requested() -> bool {
+        STOP_REQUESTED.load(Ordering::SeqCst)
+    }
+
     /// Stop the interceptor hook and stop CFRunLoop from any thread.
     pub fn stop_hook() -> Result<(), PlatformError> {
+        STOP_REQUESTED.store(true, Ordering::SeqCst);
         let guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = guard.as_ref() {
             unsafe {
@@ -278,11 +289,19 @@ impl KeyboardInterceptor for MacOsInterceptor {
     where
         F: FnMut(InputEvent) -> KeyAction + Send + 'static,
     {
+        if STOP_REQUESTED.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
         let mask = 1u64 << kCGEventKeyDown;
 
         // 2. Create the event tap on current login session (wait if accessibility permission pending)
         let mut showed_prompt = false;
         let tap = loop {
+            if STOP_REQUESTED.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+
             let t = unsafe {
                 CGEventTapCreate(
                     kCGSessionEventTap,
@@ -299,14 +318,16 @@ impl KeyboardInterceptor for MacOsInterceptor {
 
             if !showed_prompt {
                 Self::prompt_accessibility();
-                show_info_dialog(
-                    "Harfiy - Ruxsat talab qilinadi",
-                    "Harfiy klaviaturadagi harflarni avtomatik o'girishi uchun Accessibility (Maxsus imkoniyatlar) ruxsati zarur.\n\nIltimos, ochilgan tizim sozlamalarida Harfiy-ni yoqing.",
-                );
                 showed_prompt = true;
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(1500));
+            // Granular sleep to respond quickly to shutdown or cancellation
+            for _ in 0..10 {
+                if STOP_REQUESTED.load(Ordering::SeqCst) {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
         };
 
         // 3. Attach tap to current thread's CFRunLoop
@@ -339,7 +360,7 @@ impl KeyboardInterceptor for MacOsInterceptor {
 
         println!("macOS klaviatura qabul qiluvchisi (CGEventTap) faollashdi.");
 
-        // 4. Run CoreFoundation run loop (blocks this thread until stop() is called)
+        // 4. Run CoreFoundation run loop (blocks this thread until CFRunLoopStop is called)
         unsafe {
             CFRunLoopRun();
         }
@@ -350,6 +371,7 @@ impl KeyboardInterceptor for MacOsInterceptor {
             if let Some(state) = guard.take() {
                 unsafe {
                     CGEventTapEnable(state.tap_port, false);
+                    CFRunLoopRemoveSource(current_run_loop, run_loop_source, kCFRunLoopCommonModes);
                     CFRelease(run_loop_source as _);
                     CFRelease(state.tap_port as _);
                 }
@@ -392,10 +414,21 @@ unsafe extern "C" fn macos_event_tap_callback(
     _user_info: *mut libc::c_void,
 ) -> CGEventRef {
     // If the system temporarily disabled the tap due to timeout, re-enable it immediately
-    if r#type == kCGEventTapDisabledByTimeout || r#type == kCGEventTapDisabledByUserInput {
+    if r#type == kCGEventTapDisabledByTimeout {
         let guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = guard.as_ref() {
             CGEventTapEnable(state.tap_port, true);
+        }
+        return event;
+    }
+
+    // If the user revoked Accessibility permission in macOS System Settings,
+    // do NOT re-enable the tap (doing so causes an infinite loop / 100% CPU lockup).
+    // Instead, stop the run loop so the interceptor can exit cleanly and wait for re-grant.
+    if r#type == kCGEventTapDisabledByUserInput {
+        let guard = HOOK_STATE.lock().unwrap();
+        if let Some(state) = guard.as_ref() {
+            CFRunLoopStop(state.run_loop);
         }
         return event;
     }

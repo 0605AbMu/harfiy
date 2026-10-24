@@ -214,7 +214,6 @@ fn run_daemon(no_tray: bool) {
     });
 
     let engine = Arc::new(Mutex::new(engine_inner));
-    let engine_hook = Arc::clone(&engine);
 
     let is_running = Arc::new(AtomicBool::new(true));
     let is_running_ctrlc = Arc::clone(&is_running);
@@ -227,6 +226,10 @@ fn run_daemon(no_tray: bool) {
         {
             let _ = WindowsInterceptor::stop_hook();
         }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = MacOsInterceptor::stop_hook();
+        }
     });
 
     // Start platform interceptor on background worker thread
@@ -234,6 +237,7 @@ fn run_daemon(no_tray: bool) {
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
         let conversions_worker = Arc::clone(&conversions_counter);
+        let engine_hook = Arc::clone(&engine);
         thread::spawn(move || {
             let mut interceptor = WindowsInterceptor::new();
             let res = interceptor.run(move |event| {
@@ -256,21 +260,33 @@ fn run_daemon(no_tray: bool) {
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
         let conversions_worker = Arc::clone(&conversions_counter);
+        let engine_worker = Arc::clone(&engine);
         thread::spawn(move || {
-            let mut interceptor = MacOsInterceptor::new();
-            let res = interceptor.run(move |event| {
-                let mut eng = engine_hook.lock().unwrap();
-                let action = eng.process(event);
-                if let harfiy_engine::KeyAction::Transform { .. } = action {
-                    conversions_worker.fetch_add(1, Ordering::Relaxed);
-                }
-                action
-            });
+            while is_running_worker.load(Ordering::SeqCst) && !MacOsInterceptor::is_stop_requested() {
+                let mut interceptor = MacOsInterceptor::new();
+                let eng_hook = Arc::clone(&engine_worker);
+                let conv_worker = Arc::clone(&conversions_worker);
+                let res = interceptor.run(move |event| {
+                    let mut eng = eng_hook.lock().unwrap();
+                    let action = eng.process(event);
+                    if let harfiy_engine::KeyAction::Transform { .. } = action {
+                        conv_worker.fetch_add(1, Ordering::Relaxed);
+                    }
+                    action
+                });
 
-            if let Err(e) = res {
-                eprintln!("Error running macOS interceptor: {}", e);
+                if let Err(e) = res {
+                    eprintln!("macOS interceptor xatoligi: {}", e);
+                }
+
+                if !is_running_worker.load(Ordering::SeqCst) || MacOsInterceptor::is_stop_requested() {
+                    break;
+                }
+
+                // If run() exited (e.g. Accessibility permission was revoked in System Settings),
+                // sleep briefly before checking and reconnecting
+                std::thread::sleep(Duration::from_millis(500));
             }
-            is_running_worker.store(false, Ordering::SeqCst);
         })
     };
 
@@ -278,6 +294,7 @@ fn run_daemon(no_tray: bool) {
     let interceptor_thread = {
         let is_running_worker = Arc::clone(&is_running);
         let conversions_worker = Arc::clone(&conversions_counter);
+        let engine_hook = Arc::clone(&engine);
         thread::spawn(move || {
             let mut interceptor = LinuxInterceptor::new();
             let res = interceptor.run(move |event| {
