@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-VERSION="${1:-0.6.0}"
+VERSION="${1:-0.7.0}"
 TARGET_DIR="${2:-target/release}"
 OUT_DIR="${3:-dist}"
 ARCH="${4:-universal}"
