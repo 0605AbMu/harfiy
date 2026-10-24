@@ -75,14 +75,23 @@ Tayyor dasturni **[GitHub Releases](https://github.com/0605AbMu/harfiy-release/r
 > [!IMPORTANT]
 > ### ⚠️ macOS Gatekeeper («Noma’lum dasturchi») ogohlantirishini yechish:
 > 
-> Agar faylni ochganda ***«cannot be opened because it is from an unidentified developer»*** xabari chiqsa:
+> Apple kompaniyasi **macOS 15 Sequoia** va eng so‘nggi macOS versiyalarida eski o‘ng tugma (`Control + Click`) bilan chetlab o‘tish imkoniyatini bekor qildi.
 > 
-> 👉 **Eng oson va tezkor yo‘li (2 soniyada):**
-> 1. `.pkg` (yoki `.dmg`) fayli ustiga sichqonchaning **O‘ng tugmasini** (yoki klaviaturadagi **`Control`** tugmasini bosib turib sichqonchaning chap tugmasini) bosing.
-> 2. Chiqqan menyudan **«Open» (Ochish)** bandini tanlang.
-> 3. Ekranga chiqqan yangi oynada **«Open» (Baribir ochish)** tugmasini bosing!
+> Agar yuklab olingan faylni ochganda ***«cannot be opened because it is from an unidentified developer»*** xabari chiqsa, buni hal qilishning **2 ta oson va ishonchli yo‘li** bor:
 > 
-> *(Alternativ yo‘li: **System Settings (Tizim sozlamalari)** ➔ **Privacy & Security (Maxfiylik va xavfsizlik)** bo‘limining eng pastida **«Open Anyway» (Baribir ochish)** tugmasini bosing).*
+> #### 1-usul: Tizim sozlamalari orqali (Grafik usul — 5 soniya)
+> 1. Faylni ochishga uringaningizdan so‘ng (ogohlantirish chiqqach): **System Settings (Tizim sozlamalari)** ni oching.
+> 2. Chap menyudan **Privacy & Security (Maxfiylik va xavfsizlik)** bo‘limiga kiring.
+> 3. Sahifaning pastki qismiga tushing («Security» bo‘limi):
+>    > *“harfiy-v...” was blocked to protect your Mac.*
+> 4. Uning yonidagi **«Open Anyway» (Baribir ochish)** tugmasini bosing va Mac parolingizni kiriting!
+> 
+> #### 2-usul: Terminal orqali (Bitta buyruq — 1 soniya)
+> Terminal dasturini ochib, quyidagi buyruqni kiriting:
+> ```bash
+> xattr -cr ~/Downloads/harfiy*
+> ```
+> Shundan so‘ng `.pkg` yoki `.dmg` faylini odatiy tarzda ikki marta bosib bemalol ochishingiz va o‘rnatishingiz mumkin!
 
 ### 🪟 Windows (10 / 11)
 * `harfiy-v...-windows-x86_64-setup.exe` faylini yuklab oling va ishga tushiring.
