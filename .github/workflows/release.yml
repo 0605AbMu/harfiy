@@ -243,8 +243,8 @@ jobs:
           DIST_DIR="dist"
           mkdir -p "$DIST_DIR"
           
-          # 1. Build .dmg installer
-          chmod +x packaging/macos/build_dmg.sh
+          # 1. Build .dmg and .pkg installer wizard
+          chmod +x packaging/macos/build_dmg.sh packaging/macos/build_pkg.sh
           ./packaging/macos/build_dmg.sh "$VERSION" "target/${TARGET}/release" "$DIST_DIR" "${{ matrix.arch }}"
           
           # 2. Build portable .tar.gz
@@ -292,7 +292,7 @@ jobs:
       - name: Assemble final release files and master checksums
         run: |
           mkdir -p release-assets
-          find downloaded-installers -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
+          find downloaded-installers -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.pkg" -o -name "*.deb" -o -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
           
           cd release-assets
           sha256sum * > SHA256SUMS.txt

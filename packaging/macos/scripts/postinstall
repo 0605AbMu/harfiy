@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+APP_PATH="/Applications/Harfiy.app"
+
+# 1. Remove Gatekeeper quarantine attributes and enforce correct permissions
+if [ -d "$APP_PATH" ]; then
+    xattr -cr "$APP_PATH" 2>/dev/null || true
+    chmod -R 755 "$APP_PATH" 2>/dev/null || true
+fi
+
+# 2. Determine current active GUI console user
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+    CONSOLE_USER=$(who | awk '/console/{print $1}' | head -n 1)
+fi
+
+# 3. Launch Harfiy in the user's graphical Aqua session
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+    USER_ID=$(id -u "$CONSOLE_USER" 2>/dev/null || echo "501")
+    launchctl asuser "$USER_ID" sudo -u "$CONSOLE_USER" open "$APP_PATH" 2>/dev/null || \
+    sudo -u "$CONSOLE_USER" open "$APP_PATH" 2>/dev/null || \
+    open "$APP_PATH" 2>/dev/null || true
+else
+    open "$APP_PATH" 2>/dev/null || true
+fi
+
+exit 0

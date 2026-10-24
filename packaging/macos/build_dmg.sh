@@ -6,6 +6,12 @@ TARGET_DIR="${2:-target/release}"
 OUT_DIR="${3:-dist}"
 ARCH="${4:-universal}"
 
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 1. Build macOS Installer Wizard (.pkg)
+"${DIR}/build_pkg.sh" "${VERSION}" "${TARGET_DIR}" "${OUT_DIR}" "${ARCH}"
+PKG_NAME="harfiy-v${VERSION}-macos-${ARCH}.pkg"
+
 APP_BUNDLE="Harfiy.app"
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
@@ -51,6 +57,10 @@ rm -rf "${DMG_STAGING}"
 mkdir -p "${DMG_STAGING}"
 cp -r "${APP_BUNDLE}" "${DMG_STAGING}/"
 ln -s /Applications "${DMG_STAGING}/Applications"
+
+if [ -f "${OUT_DIR}/${PKG_NAME}" ]; then
+    cp "${OUT_DIR}/${PKG_NAME}" "${DMG_STAGING}/Harfiy O'rnatish (Installer).pkg"
+fi
 
 mkdir -p "${OUT_DIR}"
 DMG_NAME="harfiy-v${VERSION}-macos-${ARCH}.dmg"

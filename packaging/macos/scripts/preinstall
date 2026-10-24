@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+# Terminate any running Harfiy process cleanly before installing/updating
+pkill -15 -x harfiy 2>/dev/null || true
+pkill -15 -f "Harfiy.app/Contents/MacOS/harfiy" 2>/dev/null || true
+sleep 1
+pkill -9 -x harfiy 2>/dev/null || true
+pkill -9 -f "Harfiy.app/Contents/MacOS/harfiy" 2>/dev/null || true
+
+exit 0
