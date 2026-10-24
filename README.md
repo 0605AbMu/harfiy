@@ -1,48 +1,51 @@
-# Harfiy: Cross-Platform O‘zbek Alifbosi Avto-Konvertatsiya Dvigateli
+# Harfiy: Zamonaviy O‘zbek Alifbosi Avto-Konvertatsiya Tizimi
 
-**Harfiy** — zamonaviy o‘zbek lotin alifbosidagi harf birikmalarini (`sh`, `ch`, `o'`, `g'`) real vaqt rejimida yozish paytida yangi unikal grafemalarga (`ş`, `ç`, `ö`, `ğ`) kechikishsiz (sub-millisecond) va uzluksiz almashtirib beruvchi tizim darajasidagi fon xizmati (daemon).
+<p align="center">
+  <img src="assets/app_icon_1024.png" alt="Harfiy Logo" width="128" height="128" />
+</p>
 
-🌐 **Rasmiy veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)
+<p align="center">
+  <strong>O‘zbek lotin alifbosidagi harf birikmalarini (<code>sh</code>, <code>ch</code>, <code>o'</code>, <code>g'</code>) real vaqtda yangi unikal grafemalarga (<code>ş</code>, <code>ç</code>, <code>ö</code>, <code>ğ</code>) kechikishsiz almashtiruvchi tizim darajasidagi fon xizmati.</strong>
+</p>
 
-Loyiha to'liq **Rust** tilida, xavfsiz, nol xotira yuklamasi (zero-cost abstractions) va qat'iy determinizm tamoyillari asosida ishlab chiqilgan.
+<p align="center">
+  <a href="https://github.com/0605AbMu/harfiy/releases"><img src="https://img.shields.io/github/v/release/0605AbMu/harfiy?color=blue&label=Versiya" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Litsenziya-MIT-green.svg" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Platforma-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platforms" />
+  <img src="https://img.shields.io/badge/Rust-1.80%2B-orange.svg" alt="Rust 1.80+" />
+  <img src="https://img.shields.io/badge/Tarmoq-100%25%20Offline-success.svg" alt="Zero Network" />
+</p>
 
----
-
-## 🏛️ Arxitektura va Tuzilma
-
-Loyiha Cargo Workspace monorepo tuzilishiga ega:
-
-```
-harfiy/
-├── Cargo.toml                  # Workspace konfiguratsiyasi va LTO release profili
-├── crates/
-│   ├── engine/                 # Platformadan mustaqil FSM va qoidalar dvigateli (harfiy-engine)
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── fsm.rs          # Finite State Machine (stack-based, Instant Undo)
-│   │   │   └── rules.rs        # Konvertatsiya xaritalari va apostrof turlari
-│   │   └── tests/              # 100% qamrovli xotira testlari
-│   ├── platform/               # OS qatlamlari uchun interceptor va emitter trait'lari (harfiy-platform)
-│   │   ├── src/
-│   │   │   ├── lib.rs          # KeyboardInterceptor va KeyboardEmitter trait'lari
-│   │   │   ├── windows.rs      # Windows hook (WH_KEYBOARD_LL + SendInput + Magic loop guard)
-│   │   │   ├── macos.rs        # macOS adapteri (CGEventTap + CoreGraphics)
-│   │   │   ├── linux.rs        # Linux adapteri (evdev + uinput)
-│   │   │   └── mock.rs         # Sof xotiradagi Mock interceptor va emitter
-│   ├── tray/                   # Tizim paneli (System Tray) va global hotkey (harfiy-tray)
-│   │   └── src/
-│   │       └── lib.rs          # tray-icon + global-hotkey (Ctrl+Shift+U)
-│   └── daemon/                 # Asosiy CLI va boshqaruvchi fon xizmati (harfiy-daemon)
-│       └── src/
-│           ├── main.rs         # Lifecycle, signal handling (Ctrl+C), argumentlar
-│           └── config.rs       # config.toml yuklash va boshqarish
-```
+🌐 **Rasmiy veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)  
+📦 **Yuklab olish (Releases):** [github.com/0605AbMu/harfiy/releases](https://github.com/0605AbMu/harfiy/releases)
 
 ---
 
-## ⚙️ Konvertatsiya Qoidalari va Xususiyatlari
+## 📌 Loyiha Haqida va Muammo
 
-### 1. Asosiy Qoidalar Matrisasi
+O‘zbekiston Respublikasining yangilangan lotin alifbosi islohotiga ko‘ra, qo‘shharflar (`sh`, `ch`) va belgili harflar (`o'`, `g'`) o‘rniga xalqaro standartlarga mos unikal harflar (`ş`, `ç`, `ö`, `ğ`) joriy etilmoqda. Biroq, zamonaviy kompyuter klaviaturalarida bu harflar uchun maxsus tugmalar mavjud emas.
+
+**Harfiy** ushbu muammoni tizim darajasida hal qiladi:
+- Foydalanuvchi odatiy tarzda `sh`, `ch`, `o'`, `g'` deb yozaveradi.
+- Harfiy ularni real vaqt rejimida (yozish bilan bir onda, sub-millisecond kechikish bilan) yangi harflarga almashtirib beradi.
+- Agar foydalanuvchiga eski juftlik kerak bo‘lsa, darhol `Backspace` bosish orqali asl harflar tiklanadi (**Instant Undo**).
+- **100% Offline va Maxfiy:** Hech qanday tarmoq so‘rovlari yo‘q, barcha hisob-kitoblar faqat kompyuteringiz xotirasida ishlaydi.
+
+---
+
+## ✨ Asosiy Imkoniyatlar
+
+- ⚡ **Sub-millisecond Tezlik:** Rust tilida yozilgan deterministik FSM (Finite State Machine) har bir tugmani < 0.05 ms ichida qayta ishlaydi.
+- ↩️ **Instant Undo (Tezkor Bekor Qilish):** `sh` -> `ş` ga o'zgargach darhol `Backspace` bosilsa, `ş` o'chib asl `sh` tiklanadi.
+- 🔤 **Barcha Apostrof Turlari:** To‘g‘ri, qiyshiq, ochiluvchi/yopiluvchi va bir tirnoqli barcha belgilarni taniydi (`'`, `` ` ``, `‘`, `’`, `ʻ`, `ʼ`, `´`).
+- 🎮 **O‘yin va To‘liq Ekran Rejimi (Game Mode):** To‘liq ekranli o‘yinlar yoki maxsus dasturlar ochilganda klaviatura ushlab qolinmaydi.
+- 🚫 **Istisno Dasturlar (Excluded Apps):** Parol kiritish yoki maxsus kod muharrirlarini konvertatsiyadan istisno qilish imkoniyati.
+- 🎛️ **Tezkor Boshqaruv:** `Ctrl + Shift + U` orqali pauza/faollashtirish, `Ctrl + Alt + U` orqali belgilangan matnni bir zumda o‘girish.
+- 🪶 **Yengil Vazn:** Xotira sarfi < 8 MB RAM, fayl hajmi atigi ~1.1 MB.
+
+---
+
+## ⚙️ Qoidalar Matrisasi
 
 | Kiritish | Natija | Unicode | Izoh |
 | :--- | :--- | :--- | :--- |
@@ -56,71 +59,100 @@ harfiy/
 | `G` + `'` / `` ` `` / `‘` / `’` / `ʻ` / `ʼ` / `´` | `Ğ` | `U+011E` | Barcha apostrof turlari |
 | *(ixtiyoriy)* `n` + `g` | `ñ` / `Ñ` | `U+00F1` / `U+00D1` | Sozlamada yoqilganda (`enable_ng = true`) |
 
-### 2. ⚡ Instant Undo (Tezkor Bekor Qilish)
-Agar avto-konvertatsiyadan so'ng (`sh` -> `ş`) foydalanuvchi darhol `Backspace` tugmasini bossa, dvigatel `ş` ni o'chiradi va uning o'rniga asl kiritilgan juftlikni (`sh`) tiklaydi. Ikkinchi bosilgan `Backspace` odatdagi tarzda bitta harfni o'chiradi.
-
-### 3. 🛡️ Klaviaturadagi Boshqa Tugmalar
-- `ArrowLeft`, `ArrowRight`, `Home`, `End`, `PageUp`, `PageDown`, `Escape`, `Enter`, `Tab` bosilganda FSM darhol `IDLE` holatiga qaytadi.
-- `Ctrl` yoki `Alt` kombinatsiyalari (`Ctrl+C`, `Ctrl+V`, `Ctrl+S` va h.k.) paytida dvigatel aralashmaydi va tizim buyruqlarini buzmaydi.
-
 ---
 
-## 📥 Yuklab Olish va O‘rnatish
+## 📥 Foydalanuvchilar uchun: O‘rnatish
 
-Tayyor dasturni **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)** sahifasidan kompyuteringiz turiga mos holda yuklab oling:
+Tayyor dasturni [GitHub Releases](https://github.com/0605AbMu/harfiy/releases) sahifasidan operatsion tizimingizga mos holda yuklab oling:
 
 ### 🍎 macOS (Apple Silicon M1/M2/M3/M4 va Intel)
-
-* O‘rnatish yoki yangilash uchun **`.pkg`** (yoki `.dmg`) faylini yuklab oling.
-* O‘rnatish ustasi (Installer Wizard) eski versiya ishlab turgan bo‘lsa uni to‘xtatadi, yangisini o‘rnatadi va avtomatik ishga tushiradi.
-
-> [!IMPORTANT]
-> ### ⚠️ macOS Gatekeeper («Noma’lum dasturchi») ogohlantirishini yechish:
-> 
-> Apple kompaniyasi **macOS 15 Sequoia** va eng so‘nggi macOS versiyalarida eski o‘ng tugma (`Control + Click`) bilan chetlab o‘tish imkoniyatini bekor qildi.
-> 
-> Agar yuklab olingan faylni ochganda ***«cannot be opened because it is from an unidentified developer»*** xabari chiqsa, buni hal qilishning **2 ta oson va ishonchli yo‘li** bor:
-> 
-> #### 1-usul: Tizim sozlamalari orqali (Grafik usul — 5 soniya)
-> 1. Faylni ochishga uringaningizdan so‘ng (ogohlantirish chiqqach): **System Settings (Tizim sozlamalari)** ni oching.
-> 2. Chap menyudan **Privacy & Security (Maxfiylik va xavfsizlik)** bo‘limiga kiring.
-> 3. Sahifaning pastki qismiga tushing («Security» bo‘limi):
->    > *“harfiy-v...” was blocked to protect your Mac.*
-> 4. Uning yonidagi **«Open Anyway» (Baribir ochish)** tugmasini bosing va Mac parolingizni kiriting!
-> 
-> #### 2-usul: Terminal orqali (Bitta buyruq — 1 soniya)
-> Terminal dasturini ochib, quyidagi buyruqni kiriting:
-> ```bash
-> xattr -cr ~/Downloads/harfiy*
-> ```
-> Shundan so‘ng `.pkg` yoki `.dmg` faylini odatiy tarzda ikki marta bosib bemalol ochishingiz va o‘rnatishingiz mumkin!
+1. `.pkg` (o‘rnatuvchi usta) yoki `.dmg` faylini yuklab oling va oching.
+2. Agar macOS Gatekeeper ogohlantirishi chiqsa:
+   - **Oddiy usul:** **System Settings** -> **Privacy & Security** bo‘limiga tushib, **«Open Anyway»** tugmasini bosing.
+   - **Terminal orqali (1 soniya):**
+     ```bash
+     xattr -cr ~/Downloads/harfiy*
+     ```
+3. O‘rnatilgach, macOS tizim panelida (Tray) Harfiy belgisi paydo bo‘ladi.
+4. Tizim ruxsati so‘ralganda: **System Settings** -> **Privacy & Security** -> **Accessibility** bo‘limida Harfiy ilovasini yoqing.
 
 ### 🪟 Windows (10 / 11)
-* `harfiy-v...-windows-x86_64-setup.exe` faylini yuklab oling va ishga tushiring.
+- `harfiy-...-windows-x86_64-setup.exe` faylini yuklab oling va odatiy tarzda o‘rnating.
+- O‘rnatuvchi dasturni avtomatik ishga tushirish (Autostart) va bosh menyuga yorliq qo‘shish imkonini beradi.
 
 ### 🐧 Linux (Ubuntu / Debian / Mint)
-* `harfiy_..._amd64.deb` faylini yuklab olib, o‘rnating:
+- `.deb` paketini yuklab olib, terminalda o‘rnating:
   ```bash
   sudo dpkg -i harfiy_*_amd64.deb
   ```
 
 ---
 
-## 🚀 Dasturchilar uchun: Kompilyatsiya va Boshqaruv
+## 🏛️ Dasturchilar uchun: Arxitektura va Tuzilma
+
+Harfiy mustaqil modullardan iborat **Cargo Workspace (monorepo)** arxitekturasida qurilgan:
+
+```
+harfiy/
+├── Cargo.toml                  # Workspace konfiguratsiyasi va LTO release profili
+├── crates/
+│   ├── engine/                 # Platformadan 100% mustaqil FSM dvigateli (harfiy-engine)
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── fsm.rs          # Deterministik State Machine (Stack-based Instant Undo)
+│   │   │   └── rules.rs        # Konvertatsiya xaritalari va Unicode qoidalari
+│   │   └── tests/              # 100% test qamrovi
+│   ├── platform/               # OS darajasidagi klaviatura hook va sintetik emitterlar (harfiy-platform)
+│   │   ├── src/
+│   │   │   ├── lib.rs          # KeyboardInterceptor va KeyboardEmitter trait'lari
+│   │   │   ├── macos.rs        # macOS adapteri (CGEventTap + CoreGraphics + Accessibility)
+│   │   │   ├── windows.rs      # Windows hook (WH_KEYBOARD_LL + SendInput + LLKHF_INJECTED)
+│   │   │   ├── linux.rs        # Linux adapteri (evdev + uinput)
+│   │   │   └── mock.rs         # Sof xotiradagi test adapteri (CI/CD uchun)
+│   │   └── tests/
+│   ├── tray/                   # Tizim paneli (System Tray) va global hotkey (harfiy-tray)
+│   │   └── src/
+│   │       └── lib.rs          # muda + tray-icon + global-hotkey
+│   └── daemon/                 # CLI va fon jarayonini boshqaruvchi (harfiy-daemon)
+│       └── src/
+│           ├── main.rs         # Lifecycle, signal handling (Ctrl+C), multithreading
+│           └── config.rs       # config.toml yuklash va boshqarish
+├── packaging/                  # O‘rnatuvchi paketlar skriptlari (.pkg, .dmg, .iss, .deb)
+└── .github/workflows/          # Avtomatlashtirilgan release CI workflow
+```
+
+---
+
+## 🛠️ Mahalliy Kompilyatsiya va Ishga Tushirish
 
 ### Talablar
-- Rust 1.80+ (stable toolchain)
+- **Rust:** `1.80.0` yoki undan yuqori (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- **Git**
 
-### Kompilyatsiya va Testlar
+### Linux tizimlari uchun bog‘liqliklar:
 ```bash
-# Barcha testlarni ishga tushirish (Engine + Platform)
+sudo apt-get update
+sudo apt-get install -y pkg-config libglib2.0-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libx11-dev
+```
+
+### Kodni tekshirish va yig‘ish:
+```bash
+# 1. Repozitoriyni klonlash
+git clone https://github.com/0605AbMu/harfiy.git
+cd harfiy
+
+# 2. Barcha testlarni o‘tkazish (Engine, Platform, Tray, Daemon)
 cargo test --workspace
 
-# Release rejimida maksimal optimizatsiya va LTO bilan yig'ish
+# 3. Kod formatini va linterlarni tekshirish
+cargo fmt --check
+cargo clippy --workspace -- -D warnings
+
+# 4. Release rejimida yig‘ish (LTO va strip bilan)
 cargo build --release
 ```
 
-### Dasturni Ishga Tushirish
+### Dasturni Sinab Ko‘rish:
 ```bash
 # Tizim paneli (Tray) bilan ishga tushirish
 cargo run -p harfiy-daemon -- start
@@ -128,77 +160,69 @@ cargo run -p harfiy-daemon -- start
 # Konsol (headless) rejimida ishga tushirish
 cargo run -p harfiy-daemon -- --no-tray
 
-# Holatni tekshirish
+# Jarayon holatini tekshirish
 cargo run -p harfiy-daemon -- status
 ```
 
-### Global Hotkey
-- **`Ctrl + Shift + U`**: Harfiy faoliyatini bir zumda yoqish yoki to'xtatib turish (Pause/Resume).
+---
+
+## 🤝 Ochiq Kodli Hamkorlik Qoidalari (Collaboration & Contributing)
+
+Harfiy — ochiq kodli loyiha va jamoaviy hissalarni mamnuniyat bilan qabul qiladi!
+
+Loyiha qoidalariga rioya qilgan holda hissa qo‘shish uchun:
+
+1. Batafsil yo‘riqnoma bilan tanishib chiqing: [CONTRIBUTING.md](CONTRIBUTING.md).
+2. **Asosiy qoida:** Harfiy foydalanuvchilarning klaviatura hodisalarini ushlaganligi sababli, **har qanday tarmoq kutubxonalari (networking), telemetriya va tashqi so‘rovlar kiritish qat'iyan man etiladi**.
+3. Yangi imkoniyatlar yoki tuzatishlar alohida tarmoqda (`feature/...` yoki `fix/...`) ishlab chiqilishi va unit-testlar bilan qamrab olinishi lozim.
+4. Pull Request yuborishdan oldin quyidagilar bajarilgan bo‘lishi shart:
+   - `cargo fmt --check`
+   - `cargo clippy --workspace -- -D warnings`
+   - `cargo test --workspace`
 
 ---
 
-## 🛠️ Konfiguratsiya (`config.toml`)
+## 🚀 Reliz va Versiyalash Jarayoni
 
-Dastur ishga tushganda avtomatik ravishda `config.toml` yaratiladi yoki yuklanadi:
+Relizlar to‘liq avtomatlashtirilgan. Yangi reliz chiqarish uchun faqatgina versiya raqami bilan Git tag qo‘yish kifoya:
 
-```toml
-# Harfiy Konfiguratsiya Fayli
-enable_ng = false
-smart_apostrophe = true
-game_mode = true
-hotkey = "Ctrl+Shift+U"
-convert_hotkey = "Ctrl+Alt+U"
-excluded_apps = []
-```
-
-Barcha rasmiy relizlar va o'rnatuvchi paketlar sahifasi: **[GitHub Releases](https://github.com/0605AbMu/harfiy/releases)**
-
----
-
-## 🚀 Versiyalash va Avtomatlashtirilgan Release (CI/CD)
-
-Loyihada versiyalash va barcha platformalar uchun relizlar chiqarish to‘liq **GitHub Actions** orqali avtomatlashtirilgan.
-
-### 1. Release chiqarish:
-
-Yangi versiya relizi avtomatik yig'ilishi va chiqarilishi uchun Git tag qo'yib push qilish kifoya:
 ```bash
-# Yangi versiya tegi yaratish va yuborish (masalan: 0.8.0)
-git tag 0.8.0
-git push origin 0.8.0
+# Yangi versiya tegi yaratish va yuborish
+git tag 0.9.0
+git push origin 0.9.0
 ```
 
-### 2. Avtomatik Yig'iladigan O'rnatuvchi Paketlar (Installers):
-* 🪟 **Windows (`.exe` Installer):** `harfiy-vX.Y.Z-windows-x86_64-setup.exe`
-  - Inno Setup orqali to'liq o'rnatuvchi: Start Menu va Desktop yorliqlari, Windows bilan avtomatik ishga tushish (Autostart) tanlovi va toza uninstaller.
-  - Qo'shimcha: Portativ `harfiy-vX.Y.Z-windows-x86_64.zip`.
-* 🍎 **macOS (`.pkg` va `.dmg` Installer):** `harfiy-vX.Y.Z-macos-{x86_64|arm64}.pkg` va `.dmg`
-  - Intel va Apple Silicon (M1/M2/M3/M4) uchun rasmiy Apple Installer Wizard (`.pkg`): yangilash paytida eski ilovani avtomatik to‘xtatadi, yangisini o‘rnatadi va avtomatik ishga tushiradi.
-  - Apple Disk Image (`.dmg`): ichida `Harfiy.app` va Installer Wizard mavjud.
-  - Qo‘shimcha: Portativ `.tar.gz` arxivlari.
-* 🐧 **Ubuntu / Debian (`.deb` Installer):** `harfiy_X.Y.Z_amd64.deb`
-  - `sudo dpkg -i harfiy_*.deb` orqali tizimga o'rnatish, `/usr/bin/harfiy`, `.desktop` menyu yorlig'i, hicolor piktogrammalari va `systemd --user` xizmat integratsiyasi.
-  - Qo'shimcha: Portativ `harfiy-vX.Y.Z-linux-x86_64.tar.gz`.
-* 🔐 **Nazorat Yig'indisi:** Har bir reliz uchun barcha fayllarning `SHA256SUMS.txt` raqamli imzolangan xeshlari avtomatik hisoblanadi.
+GitHub Actions avtomatik tarzda:
+1. Windows (`.exe` o‘rnatuvchi + `.zip`),
+2. macOS Apple Silicon va Intel (`.pkg` usta + `.dmg` + `.tar.gz`),
+3. Linux (`.deb` + `.tar.gz`),
+4. `SHA256SUMS.txt` xesh yig‘indilarini
+
+tayyorlab, to‘g‘ridan-to‘g‘ri GitHub Releases sahifasida nashr etadi.
 
 ---
 
-## 📊 Nofunksional Ko'rsatkichlar (NFR)
+## 📊 Samaradorlik Ko‘rsatkichlari (NFR)
 
-| Ko'rsatkich | Talab (TZ) | Haqiqiy Natija |
+| Ko‘rsatkich | Talab | Haqiqiy Natija |
 | :--- | :--- | :--- |
-| **Static Binary Hajmi** | `< 10 MB` | **1.1 MB** *(LTO va strip yoqilgan, tarmoq kutubxonalarisiz)* |
+| **Binar Hajmi** | `< 10 MB` | **~1.1 MB** *(LTO va strip yoqilgan)* |
 | **Kechikish (Latency)** | `< 1 ms` | **< 0.05 ms** (sub-millisecond) |
 | **RAM Sarfi** | `< 15 MB` | **< 8 MB** |
-| **Xavfsizlik** | Tarmoqsiz (Isolated) | Tarmoq kutubxonalari mavjud emas |
+| **Tarmoq Xavfsizligi** | Tarmoqsiz (Offline) | 0 ta tarmoq kutubxonasi, to‘liq izolyatsiya |
+
+---
+
+## 📜 Litsenziya
+
+Loyiha [MIT License](LICENSE) asosida tarqatiladi. Ushbu litsenziyaga muvofiq, koddan tijoriy va notijoriy maqsadlarda erkin foydalanish, o‘zgartirish va tarqatish mumkin.
 
 ---
 
 ## 👨‍💻 Muallif va Aloqa
 
-* **Muallif va Publisher:** Abdumannon Shamsiyev
-* **Rasmiy Veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)
-* **Blog:** [@abdumannon_notes](https://t.me/abdumannon_notes) *(Deep link: `tg://resolve?domain=abdumannon_notes`)*
-* **Qo'llab-quvvatlash (Support):** [@abdumannon_shamsiyev](https://t.me/abdumannon_shamsiyev) *(Deep link: `tg://resolve?domain=abdumannon_shamsiyev`)*
+* **Muallif va Asoschi:** Abdumannon Shamsiyev
+* **Veb-sahifa:** [abdumannon-shamsiyev.uz/harfiy](https://abdumannon-shamsiyev.uz/harfiy)
+* **Telegram Blog:** [@abdumannon_notes](https://t.me/abdumannon_notes)
+* **Telegram Muloqot:** [@abdumannon_shamsiyev](https://t.me/abdumannon_shamsiyev)
 * **LinkedIn:** [linkedin.com/in/abdumannon-shamsiyev](https://www.linkedin.com/in/abdumannon-shamsiyev)
-
