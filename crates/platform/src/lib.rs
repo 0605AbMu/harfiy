@@ -65,12 +65,15 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 #[cfg(windows)]
 pub use self::windows::{
     acquire_single_instance_lock, attach_parent_console, emit_copy, emit_paste, get_clipboard_text,
-    get_running_daemon_pid, is_autostart_enabled, is_current_app_excluded,
+    get_running_daemon_pid, init_dpi_awareness, is_autostart_enabled, is_current_app_excluded,
     is_foreground_fullscreen, is_game_mode, pick_executable_dialog, pump_messages,
     scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
     show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, stop_running_daemon,
     SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
 };
+
+#[cfg(not(windows))]
+pub fn init_dpi_awareness() {}
 
 #[cfg(target_os = "macos")]
 pub use self::macos::{

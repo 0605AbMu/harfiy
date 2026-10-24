@@ -50,6 +50,7 @@ enum Commands {
 }
 
 fn main() {
+    harfiy_platform::init_dpi_awareness();
     harfiy_platform::attach_parent_console();
     let cli = Cli::parse();
 

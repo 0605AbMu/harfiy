@@ -54,6 +54,27 @@ pub const HARFIY_MAGIC_FLAG: usize = 0x48415246;
 
 extern "system" {
     fn AttachConsole(dw_process_id: u32) -> i32;
+    fn GetModuleHandleA(lpModuleName: *const u8) -> usize;
+    fn GetProcAddress(hModule: usize, lpProcName: *const u8) -> usize;
+    fn SetProcessDPIAware() -> BOOL;
+}
+
+/// Initialize high-DPI awareness on Windows (Per-Monitor V2 if available, or System DPI).
+pub fn init_dpi_awareness() {
+    unsafe {
+        let user32 = GetModuleHandleA(b"user32.dll\0".as_ptr());
+        if user32 != 0 {
+            let proc = GetProcAddress(user32, b"SetProcessDpiAwarenessContext\0".as_ptr());
+            if proc != 0 {
+                let func: unsafe extern "system" fn(isize) -> BOOL = std::mem::transmute(proc);
+                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is -4
+                if func(-4).as_bool() {
+                    return;
+                }
+            }
+        }
+        let _ = SetProcessDPIAware();
+    }
 }
 
 /// Attach to the parent console if invoked from a terminal (e.g. for CLI commands).
