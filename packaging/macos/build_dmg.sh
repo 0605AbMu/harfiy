@@ -15,7 +15,11 @@ cp "${TARGET_DIR}/harfiy" "${APP_BUNDLE}/Contents/MacOS/"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/harfiy"
 
 cp packaging/macos/Info.plist "${APP_BUNDLE}/Contents/"
-sed -i '' "s/0.1.0/${VERSION}/g" "${APP_BUNDLE}/Contents/Info.plist"
+if [ -x "/usr/libexec/PlistBuddy" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP_BUNDLE}/Contents/Info.plist" 2>/dev/null || true
+else
+    sed -i '' -E "s/<string>[0-9]+\.[0-9]+\.[0-9]+<\/string>/<string>${VERSION}<\/string>/g" "${APP_BUNDLE}/Contents/Info.plist"
+fi
 
 # Generate icns if iconutil is available on macOS
 if command -v iconutil >/dev/null 2>&1; then

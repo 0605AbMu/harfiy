@@ -19,7 +19,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.6.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -28,6 +28,8 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Harfiy klaviaturadan kiritilayotgan belgilarni o‘zbek lotin imlosiga muvofiqlashtirish uchun tizim ruxsatidan foydalanadi.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Abdumannon Shamsiyev. All rights reserved.</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
