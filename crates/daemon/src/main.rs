@@ -300,9 +300,11 @@ fn run_daemon(no_tray: bool) {
     let interceptor_thread = thread::spawn(|| {});
 
     // System Tray Controller
+    let initial_permission = harfiy_platform::is_permission_granted();
     let (mut tray_controller, standalone_hotkey) = if !no_tray {
         match TrayController::new(
             true,
+            initial_permission,
             current_ver,
             &app_config.hotkey,
             &app_config.convert_hotkey,
@@ -351,6 +353,8 @@ fn run_daemon(no_tray: bool) {
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
 
     let mut last_scan = std::time::Instant::now();
+    let mut last_perm_check = std::time::Instant::now();
+    let mut last_perm_state = initial_permission;
 
     // Main event loop
     while is_running.load(Ordering::SeqCst) {
@@ -359,6 +363,24 @@ fn run_daemon(no_tray: bool) {
 
         #[cfg(target_os = "macos")]
         harfiy_tray::pump_macos_events();
+
+        // Periodically verify system permission status (e.g. Accessibility in macOS Settings)
+        if last_perm_check.elapsed() >= Duration::from_millis(1000) {
+            last_perm_check = std::time::Instant::now();
+            let perm_now = harfiy_platform::is_permission_granted();
+            if perm_now != last_perm_state {
+                last_perm_state = perm_now;
+                if let Some(tray) = &tray_controller {
+                    tray.update_permission_status(perm_now);
+                }
+                if perm_now {
+                    println!("✅ Tizim ruxsati (Accessibility) berildi! Harfiy to'liq faollashdi.");
+                    harfiy_platform::show_custom_hud("Harfiy: Tizim ruxsati berildi!", true);
+                } else {
+                    println!("⚠️ Tizim ruxsati berilmagan. Sozlamalardan ruxsat bering.");
+                }
+            }
+        }
 
         // Periodically refresh running applications list for tray menu
         if last_scan.elapsed() >= Duration::from_secs(5) {
@@ -655,6 +677,10 @@ fn run_daemon(no_tray: bool) {
                     TrayCommand::OpenSupport => {
                         println!("Telegram support ochilmoqda: tg://resolve?domain=abdumannon_shamsiyev (@abdumannon_shamsiyev)");
                         open_telegram("abdumannon_shamsiyev");
+                    }
+                    TrayCommand::OpenPermissionSettings => {
+                        println!("Tizim sozlamalari (Accessibility) ochilmoqda...");
+                        harfiy_platform::open_permission_settings();
                     }
                 }
             }

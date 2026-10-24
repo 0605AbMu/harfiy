@@ -81,6 +81,7 @@ pub enum TrayCommand {
     ClearStats,
     OpenBlog,
     OpenSupport,
+    OpenPermissionSettings,
 }
 
 /// Remove all existing items from a Submenu.
@@ -234,6 +235,10 @@ pub fn populate_excluded_submenu(
 /// System tray and hotkey manager.
 pub struct TrayController {
     tray_icon: TrayIcon,
+    tray_menu: Menu,
+    permission_item: IconMenuItem,
+    permission_sep: PredefinedMenuItem,
+    has_permission: Arc<AtomicBool>,
     _hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
     convert_hotkey: Option<HotKey>,
@@ -263,6 +268,7 @@ impl TrayController {
     /// Create and initialize the system tray icon, menu, and hotkey.
     pub fn new(
         initial_active: bool,
+        has_permission: bool,
         current_version: &str,
         hotkey_str: &str,
         convert_hotkey_str: &str,
@@ -277,6 +283,7 @@ impl TrayController {
         init_macos_app();
 
         let is_active = Arc::new(AtomicBool::new(initial_active));
+        let has_permission_arc = Arc::new(AtomicBool::new(has_permission));
         let enable_ng = Arc::new(AtomicBool::new(initial_ng));
         let autostart = Arc::new(AtomicBool::new(initial_autostart));
         let game_mode = Arc::new(AtomicBool::new(initial_game_mode));
@@ -311,6 +318,16 @@ impl TrayController {
 
         // Create simplified, elegant tray menu items
         let tray_menu = Menu::new();
+
+        // 0. Permission warning item (visible if system accessibility permissions are missing)
+        let permission_item = IconMenuItem::with_id(
+            "grant_permission",
+            "⚠️ Tizim ruxsatini berish (Accessibility)...",
+            true,
+            make_menu_icon(MENU_INFO_16),
+            None,
+        );
+        let permission_sep = PredefinedMenuItem::separator();
 
         // 1. Active toggle checkbox with shortcut hint
         let active_item = CheckMenuItem::new("Faol (Harfiy)", true, initial_active, accelerator);
@@ -392,24 +409,36 @@ impl TrayController {
         // 9. Quit item
         let quit_item = MenuItem::new("Chiqish", true, None);
 
+        let sep1 = PredefinedMenuItem::separator();
+        let sep2 = PredefinedMenuItem::separator();
+        let sep3 = PredefinedMenuItem::separator();
+        let sep4 = PredefinedMenuItem::separator();
+        let sep5 = PredefinedMenuItem::separator();
+
+        if !has_permission {
+            tray_menu
+                .append_items(&[&permission_item, &permission_sep])
+                .map_err(|e| TrayError::TrayInit(e.to_string()))?;
+        }
+
         tray_menu
             .append_items(&[
                 &active_item,
                 &convert_item,
-                &PredefinedMenuItem::separator(),
+                &sep1,
                 &ng_item,
                 &autostart_item,
                 &game_mode_item,
-                &PredefinedMenuItem::separator(),
+                &sep2,
                 &excluded_submenu,
                 &stats_submenu,
-                &PredefinedMenuItem::separator(),
+                &sep3,
                 &version_item,
                 &update_item,
-                &PredefinedMenuItem::separator(),
+                &sep4,
                 &blog_item,
                 &support_item,
-                &PredefinedMenuItem::separator(),
+                &sep5,
                 &quit_item,
             ])
             .map_err(|e| TrayError::TrayInit(e.to_string()))?;
@@ -418,7 +447,7 @@ impl TrayController {
         let icon = get_app_icon(initial_active)?;
 
         let tray_icon = TrayIconBuilder::new()
-            .with_menu(Box::new(tray_menu))
+            .with_menu(Box::new(tray_menu.clone()))
             .with_tooltip(format!(
                 "Harfiy v{} - O'zbek Alifbosi ({})",
                 current_version, hotkey_str
@@ -450,6 +479,10 @@ impl TrayController {
 
         Ok(Self {
             tray_icon,
+            tray_menu,
+            permission_item,
+            permission_sep,
+            has_permission: has_permission_arc,
             _hotkey_manager: hotkey_manager,
             hotkey,
             convert_hotkey,
@@ -474,6 +507,21 @@ impl TrayController {
             last_hotkey_press,
             last_convert_hotkey_press,
         })
+    }
+
+    /// Dynamically update system permission status in the tray menu.
+    /// If granted, removes the permission warning item from the top; if missing, prepends it.
+    pub fn update_permission_status(&self, granted: bool) {
+        let was_granted = self.has_permission.swap(granted, Ordering::SeqCst);
+        if was_granted != granted {
+            if granted {
+                let _ = self.tray_menu.remove(&self.permission_item);
+                let _ = self.tray_menu.remove(&self.permission_sep);
+            } else {
+                let _ = self.tray_menu.prepend(&self.permission_sep);
+                let _ = self.tray_menu.prepend(&self.permission_item);
+            }
+        }
     }
 
     /// Check for tray menu or hotkey events (non-blocking).
@@ -524,7 +572,9 @@ impl TrayController {
 
         // Check menu item clicks
         while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == self.active_item.id() {
+            if event.id == self.permission_item.id() {
+                return Some(TrayCommand::OpenPermissionSettings);
+            } else if event.id == self.active_item.id() {
                 let new_state = !self.is_active.load(Ordering::SeqCst);
                 self.update_state(new_state);
                 return Some(TrayCommand::ToggleActive(new_state));

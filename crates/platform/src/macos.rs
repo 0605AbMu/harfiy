@@ -901,6 +901,14 @@ pub fn show_custom_hud(message: &str, _is_success: bool) {
         .spawn();
 }
 
+/// Open macOS System Settings directly to Privacy & Security -> Accessibility and prompt for permissions.
+pub fn open_accessibility_settings() {
+    let _ = MacOsInterceptor::prompt_accessibility();
+    let _ = std::process::Command::new("/usr/bin/open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

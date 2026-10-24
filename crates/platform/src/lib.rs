@@ -74,10 +74,10 @@ pub use self::windows::{
 #[cfg(target_os = "macos")]
 pub use self::macos::{
     attach_parent_console, emit_copy, emit_paste, get_clipboard_text, is_autostart_enabled,
-    is_current_app_excluded, is_foreground_fullscreen, is_game_mode, pick_executable_dialog,
-    scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
-    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, MacOsEmitter,
-    MacOsInterceptor, HARFIY_MAGIC_FLAG,
+    is_current_app_excluded, is_foreground_fullscreen, is_game_mode, open_accessibility_settings,
+    pick_executable_dialog, scan_running_apps, set_autostart, set_clipboard_text,
+    set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
+    show_status_hud, MacOsEmitter, MacOsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -167,6 +167,32 @@ pub fn is_game_mode() -> bool {
 
 #[cfg(target_os = "linux")]
 pub use self::linux::{LinuxEmitter, LinuxInterceptor};
+
+/// Check if system-level input permissions (e.g. macOS Accessibility) are granted.
+pub fn is_permission_granted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        MacOsInterceptor::is_accessibility_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+/// Open the OS settings pane for input / accessibility permissions and prompt for grants.
+pub fn open_permission_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        macos::open_accessibility_settings();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe")
+            .arg("ms-settings:privacy")
+            .spawn();
+    }
+}
 
 #[cfg(unix)]
 pub struct SingleInstanceGuard {
