@@ -29,6 +29,7 @@ class HarfiyAccessibilityService : AccessibilityService() {
         const val KEY_INSTANT_UNDO = "harfiy_instant_undo"
         const val KEY_GAME_PAUSE = "harfiy_game_pause"
         const val KEY_EXCLUDED_APPS = "harfiy_excluded_apps"
+        const val KEY_IS_PAUSED = "harfiy_is_paused"
 
         // Stats keys
         const val KEY_STATS_TOTAL = "stats_total"
@@ -41,6 +42,19 @@ class HarfiyAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: HarfiyAccessibilityService? = null
             private set
+
+        fun isPaused(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getBoolean(KEY_IS_PAUSED, false)
+        }
+
+        fun setPaused(context: Context, paused: Boolean) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_IS_PAUSED, paused).apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                HarfiyTileService.requestTileUpdate(context)
+            }
+        }
 
         private val APOSTROPHES = charArrayOf('\'', '`', '‘', '’', 'ʻ', 'ʼ', '´')
 
@@ -88,6 +102,11 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+
+        // 0. Temporary pause check (from Quick Settings Tile or in-app toggle)
+        if (prefs.getBoolean(KEY_IS_PAUSED, false)) {
+            return
+        }
 
         // 1. Excluded apps check
         val pkgName = event.packageName?.toString() ?: ""

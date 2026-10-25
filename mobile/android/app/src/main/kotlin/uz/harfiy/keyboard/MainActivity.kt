@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
+import android.app.StatusBarManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -16,6 +17,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -211,7 +213,9 @@ class MainActivity : Activity() {
                 if (!isAccessibilityServiceEnabled()) {
                     openAccessibilitySettings()
                 } else {
-                    heroSwitch.performClick()
+                    val isPaused = HarfiyAccessibilityService.isPaused(this@MainActivity)
+                    HarfiyAccessibilityService.setPaused(this@MainActivity, !isPaused)
+                    updateStatus()
                 }
             }
         }
@@ -273,8 +277,8 @@ class MainActivity : Activity() {
                     isUpdatingUI = false
 
                     openAccessibilitySettings()
-                } else if (!isChecked && isSystemActive) {
-                    HarfiyAccessibilityService.instance?.disableService()
+                } else if (isSystemActive) {
+                    HarfiyAccessibilityService.setPaused(this@MainActivity, !isChecked)
                     updateStatus()
                 }
             }
@@ -593,6 +597,124 @@ class MainActivity : Activity() {
         }
         excludedRow.addView(exArrow)
         settingsCard.addView(excludedRow)
+        settingsCard.addView(createDivider())
+
+        // Setting 5: Yuqoridan tushuvchi sozlamalar menyusi (Quick Settings Tile)
+        val tileRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padV = dp(10)
+            setPadding(0, padV, 0, padV)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                promptAddQuickSettingsTile()
+            }
+        }
+
+        val tileBadge = TextView(this).apply {
+            text = "⚡"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FEF3C7"))
+                cornerRadius = dp(10).toFloat()
+            }
+        }
+        tileRow.addView(tileBadge)
+
+        val tileTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8)
+            }
+            val t = TextView(context).apply {
+                text = "Tezkor parda tugmasi (ixtiyoriy)"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#0F172A"))
+            }
+            val s = TextView(context).apply {
+                text = "Telefon pardasidan to‘xtatishni xohlovchilar uchun"
+                textSize = 12f
+                setTextColor(Color.parseColor("#64748B"))
+                setPadding(0, dp(1), 0, 0)
+            }
+            addView(t)
+            addView(s)
+        }
+        tileRow.addView(tileTextCol)
+
+        val tileArrow = TextView(this).apply {
+            text = "›"
+            textSize = 22f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        tileRow.addView(tileArrow)
+        settingsCard.addView(tileRow)
+        settingsCard.addView(createDivider())
+
+        // Setting 6: Boshlang'ich sozlash ustasi (Wizard)
+        val wizardRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padV = dp(10)
+            setPadding(0, padV, 0, padV)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                SetupWizardDialog(this@MainActivity) { updateStatus() }.show()
+            }
+        }
+
+        val wizardBadge = TextView(this).apply {
+            text = "🧭"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#E0F2FE"))
+                cornerRadius = dp(10).toFloat()
+            }
+        }
+        wizardRow.addView(wizardBadge)
+
+        val wizardTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8)
+            }
+            val t = TextView(context).apply {
+                text = "Boshlang‘ich sozlash ustasi (Wizard)"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#0F172A"))
+            }
+            val s = TextView(context).apply {
+                text = "Harfiy va parda tugmasini ishlatish qo‘llanmasi"
+                textSize = 12f
+                setTextColor(Color.parseColor("#64748B"))
+                setPadding(0, dp(1), 0, 0)
+            }
+            addView(t)
+            addView(s)
+        }
+        wizardRow.addView(wizardTextCol)
+
+        val wizardArrow = TextView(this).apply {
+            text = "›"
+            textSize = 22f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        wizardRow.addView(wizardArrow)
+        settingsCard.addView(wizardRow)
 
         // =====================================================================
         // 5. GAMIFIED IMPACT & STATISTICS (Sizning natijalaringiz)
@@ -850,6 +972,13 @@ class MainActivity : Activity() {
         root.addView(footer)
 
         setContentView(scrollView)
+
+        // Show onboarding wizard if first run or accessibility not yet enabled
+        if (!prefs.getBoolean("has_completed_wizard", false) && !isAccessibilityServiceEnabled()) {
+            window.decorView.post {
+                SetupWizardDialog(this) { updateStatus() }.show()
+            }
+        }
     }
 
     override fun onResume() {
@@ -863,6 +992,33 @@ class MainActivity : Activity() {
         super.onDestroy()
         engineBridge?.close()
         engineBridge = null
+    }
+
+    private fun promptAddQuickSettingsTile() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val statusBarManager = getSystemService(StatusBarManager::class.java)
+            statusBarManager.requestAddTileService(
+                ComponentName(this, HarfiyTileService::class.java),
+                "Harfiy",
+                Icon.createWithResource(this, R.mipmap.ic_launcher),
+                mainExecutor
+            ) { result ->
+                when (result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> {
+                        Toast.makeText(this, "Harfiy tezkor menyuga muvaffaqiyatli qo‘shildi!", Toast.LENGTH_SHORT).show()
+                    }
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> {
+                        Toast.makeText(this, "Harfiy allaqachon tezkor menyuda mavjud", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("Tezkor sozlamalar menyusi")
+                .setMessage("Harfiyni yuqori pardadan 1 marta bosishda yoqish yoki to‘xtatish uchun:\n\n1. Ekranning yuqori qismidan 2 marta pastga torting\n2. Qalamcha (Tahrirlash) belgisini bosing\n3. 'Harfiy' tugmasini faol tugmalar qatoriga surib qo‘ying.")
+                .setPositiveButton("Tushunarli", null)
+                .show()
+        }
     }
 
     private fun openAccessibilitySettings() {
@@ -938,13 +1094,14 @@ class MainActivity : Activity() {
 
     private fun updateStatus() {
         val isServiceEnabled = isAccessibilityServiceEnabled()
+        val isPaused = HarfiyAccessibilityService.isPaused(this)
         val dp = resources.displayMetrics.density
 
         isUpdatingUI = true
-        heroSwitch.isChecked = isServiceEnabled
+        heroSwitch.isChecked = isServiceEnabled && !isPaused
         isUpdatingUI = false
 
-        if (isServiceEnabled) {
+        if (isServiceEnabled && !isPaused) {
             heroCard.background = GradientDrawable().apply {
                 setColor(Color.parseColor("#ECFDF5")) // Soft emerald tint
                 cornerRadius = 24 * dp
@@ -960,6 +1117,22 @@ class MainActivity : Activity() {
             heroTitle.setTextColor(Color.parseColor("#065F46"))
             heroSubtitle.text = "Klaviaturangizda yangi alifbo avtomatik to‘g‘rilanadi"
             heroSubtitle.setTextColor(Color.parseColor("#047857"))
+        } else if (isServiceEnabled && isPaused) {
+            heroCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FFFBEB")) // Soft amber tint
+                cornerRadius = 24 * dp
+                setStroke((1.5f * dp).toInt(), Color.parseColor("#FDE68A"))
+            }
+            heroBadge.text = "🟡  VAQTINCHALIK TO‘XTATILGAN (PAUZA)"
+            heroBadge.setTextColor(Color.parseColor("#B45309"))
+            heroBadge.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FEF3C7"))
+                cornerRadius = 10 * dp
+            }
+            heroTitle.text = "Harfiy to‘xtatib turilibdi"
+            heroTitle.setTextColor(Color.parseColor("#92400E"))
+            heroSubtitle.text = "Qayta faollashtirish uchun bosing yoki yuqori menyudan yoqing"
+            heroSubtitle.setTextColor(Color.parseColor("#B45309"))
         } else {
             heroCard.background = GradientDrawable().apply {
                 setColor(Color.parseColor("#FFF1F2")) // Soft rose tint
