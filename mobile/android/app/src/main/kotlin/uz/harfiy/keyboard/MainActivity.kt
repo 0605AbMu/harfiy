@@ -91,7 +91,7 @@ class MainActivity : Activity() {
             isFocusableInTouchMode = true
             val padH = dp(20)
             val padV = dp(16)
-            setPadding(padH, padV, padH, dp(32))
+            setPadding(padH, padV, padH, dp(72))
         }
         scrollView.addView(root)
 
@@ -181,7 +181,7 @@ class MainActivity : Activity() {
 
         val appSubtitle = TextView(this).apply {
             text = "Yozuvni avtomatik to‘g‘rilovchi aqlli yordamchi"
-            textSize = 13f
+            textSize = 12f
             setTextColor(Color.parseColor("#64748B"))
             setPadding(0, dp(2), 0, 0)
         }
@@ -353,14 +353,21 @@ class MainActivity : Activity() {
 
         val btnDoConvert = Button(this).apply {
             text = "🪄 O‘girish"
-            textSize = 14f
+            textSize = 13f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            includeFontPadding = false
+            maxLines = 1
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(6), 0, dp(6), 0)
+            gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#2563EB"))
                 cornerRadius = dp(12).toFloat()
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1.15f).apply {
                 rightMargin = dp(6)
             }
             setOnClickListener {
@@ -381,15 +388,23 @@ class MainActivity : Activity() {
         convertBtnRow.addView(btnDoConvert)
 
         val btnCopy = Button(this).apply {
-            text = "📋 Nusxa olish"
+            text = "📋 Nusxa"
             textSize = 13f
             setTextColor(Color.parseColor("#1E293B"))
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            includeFontPadding = false
+            maxLines = 1
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(6), 0, dp(6), 0)
+            gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F1F5F9"))
                 cornerRadius = dp(12).toFloat()
                 setStroke(dp(1), Color.parseColor("#E2E8F0"))
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1.05f).apply {
                 rightMargin = dp(6)
             }
             setOnClickListener {
@@ -407,11 +422,20 @@ class MainActivity : Activity() {
             text = "Tozalash"
             textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            includeFontPadding = false
+            maxLines = 1
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(6), 0, dp(6), 0)
+            gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F8FAFC"))
                 cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#E2E8F0"))
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.9f)
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 0.95f)
             setOnClickListener {
                 convertInput.setText("")
             }
@@ -760,8 +784,9 @@ class MainActivity : Activity() {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                val padBox = dp(14)
-                setPadding(padBox, padBox, padBox, padBox)
+                val padH = dp(8)
+                val padV = dp(12)
+                setPadding(padH, padV, padH, padV)
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor(bgTint))
                     cornerRadius = dp(14).toFloat()
@@ -773,7 +798,9 @@ class MainActivity : Activity() {
                 addView(valueView)
                 val label = TextView(context).apply {
                     text = labelText
-                    textSize = 12f
+                    textSize = 11.5f
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
                     setTextColor(Color.parseColor("#64748B"))
                     setPadding(0, dp(3), 0, 0)
                 }
@@ -782,13 +809,17 @@ class MainActivity : Activity() {
         }
 
         statConversionsCount = TextView(this).apply {
-            textSize = 24f
+            textSize = 21f
             typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            includeFontPadding = false
             setTextColor(Color.parseColor("#2563EB"))
         }
         statTimeSaved = TextView(this).apply {
-            textSize = 24f
+            textSize = 21f
             typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            includeFontPadding = false
             setTextColor(Color.parseColor("#059669"))
         }
         metricsRow.addView(createMetricBox(statConversionsCount, "To‘g‘rilangan harflar", "#EFF6FF"))
@@ -967,7 +998,7 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(Color.parseColor("#94A3B8"))
             gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, dp(20))
+            setPadding(0, dp(14), 0, dp(24))
         }
         root.addView(footer)
 
@@ -1430,11 +1461,14 @@ class MainActivity : Activity() {
             text = "Bekor qilish"
             textSize = 14f
             setTextColor(Color.parseColor("#64748B"))
+            isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F1F5F9"))
                 cornerRadius = dp(12).toFloat()
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply {
                 rightMargin = dp(8)
             }
             setOnClickListener {
@@ -1447,11 +1481,14 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#2563EB"))
                 cornerRadius = dp(12).toFloat()
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f)
             setOnClickListener {
                 prefs.edit().putStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, currentExcluded).apply()
                 updateExcludedAppsSummary()
