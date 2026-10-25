@@ -1,12 +1,19 @@
 package uz.harfiy.keyboard
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import android.view.accessibility.AccessibilityManager
 import androidx.annotation.RequiresApi
+import androidx.core.content.edit
 
 /**
  * Quick Settings Tile for Harfiy.
@@ -36,41 +43,71 @@ class HarfiyTileService : TileService() {
         updateTileState()
     }
 
+    @SuppressLint("ApplySharedPref", "StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
-        val isServiceActive = HarfiyAccessibilityService.instance != null
+        val isServiceActive = isAccessibilityServiceEnabled()
         val prefs = getSharedPreferences(HarfiyAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
 
         if (isServiceActive) {
             // Service is active in system: 1-Click to toggle PAUSE / RESUME without unbinding!
             val currentlyPaused = prefs.getBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, false)
             val newPaused = !currentlyPaused
-            prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, newPaused).apply()
+            prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, newPaused) }
+            sendBroadcast(Intent(HarfiyAccessibilityService.ACTION_PREFS_CHANGED).setPackage(packageName))
             updateTileState()
         } else {
             // Service is not enabled in Android settings: Launch app to guide activation
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivityAndCollapse(launchIntent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val pendingIntent = PendingIntent.getActivity(
+                        this,
+                        0,
+                        launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    startActivityAndCollapse(pendingIntent)
+                } else {
+                    @Suppress("DEPRECATION")
+                    startActivityAndCollapse(launchIntent)
+                }
             }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name)
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        if (enabledServices.contains(expectedComponent.flattenToString()) ||
+            enabledServices.contains("${packageName}/") ||
+            enabledServices.contains(HarfiyAccessibilityService::class.java.name)) {
+            return true
+        }
+
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
+        val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        return list.any {
+            it.resolveInfo.serviceInfo.packageName == packageName &&
+            it.resolveInfo.serviceInfo.name.contains("HarfiyAccessibilityService")
         }
     }
 
     private fun updateTileState() {
         val tile = qsTile ?: return
-        val isServiceActive = HarfiyAccessibilityService.instance != null
+        val isServiceActive = isAccessibilityServiceEnabled()
         val prefs = getSharedPreferences(HarfiyAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
         val isPaused = prefs.getBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, false)
 
         // Use the official Harfiy Brand Logo with transparent background (properly tinted by Android)
-        tile.icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_tile_harfiy)
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_tile_harfiy)
 
         if (isServiceActive && !isPaused) {
             tile.state = Tile.STATE_ACTIVE
             tile.label = "Harfiy: Faol"
             tile.contentDescription = "Harfiy faol va harflarni o‘girmoqda"
-        } else if (isServiceActive && isPaused) {
+        } else if (isServiceActive) {
             tile.state = Tile.STATE_INACTIVE
             tile.label = "Harfiy: Pauza"
             tile.contentDescription = "Harfiy vaqtinchalik to‘xtatilgan"

@@ -29,11 +29,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Harfiy Accessibility Service (Works over Gboard, Samsung, etc.) -->
+        <!-- Harfiy Accessibility Service (Runs in isolated background process) -->
         <service
             android:name=".HarfiyAccessibilityService"
             android:label="@string/accessibility_service_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:process=":service"
+            android:stopWithTask="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -49,6 +51,7 @@
             android:icon="@drawable/ic_tile_harfiy"
             android:label="Harfiy"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:process=":service"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

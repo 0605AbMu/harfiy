@@ -1,7 +1,11 @@
 package uz.harfiy.keyboard
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.os.Build
@@ -10,6 +14,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 
 /**
  * Harfiy Accessibility Service.
@@ -25,6 +31,7 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
     companion object {
         const val PREFS_NAME = "harfiy_prefs"
+        const val ACTION_PREFS_CHANGED = "uz.harfiy.keyboard.ACTION_PREFS_CHANGED"
         const val KEY_ENABLE_NG = "harfiy_enable_ng"
         const val KEY_INSTANT_UNDO = "harfiy_instant_undo"
         const val KEY_GAME_PAUSE = "harfiy_game_pause"
@@ -48,9 +55,12 @@ class HarfiyAccessibilityService : AccessibilityService() {
             return prefs.getBoolean(KEY_IS_PAUSED, false)
         }
 
+        @SuppressLint("ApplySharedPref")
         fun setPaused(context: Context, paused: Boolean) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit().putBoolean(KEY_IS_PAUSED, paused).apply()
+            prefs.edit(commit = true) { putBoolean(KEY_IS_PAUSED, paused) }
+            // Broadcast change to isolated service process if running in :service
+            context.sendBroadcast(Intent(ACTION_PREFS_CHANGED).setPackage(context.packageName))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 HarfiyTileService.requestTileUpdate(context)
             }
@@ -79,9 +89,22 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
     private lateinit var prefs: SharedPreferences
 
+    private val prefsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val filter = IntentFilter(ACTION_PREFS_CHANGED)
+        ContextCompat.registerReceiver(
+            this,
+            prefsReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onServiceConnected() {
@@ -120,14 +143,11 @@ class HarfiyAccessibilityService : AccessibilityService() {
             return
         }
 
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
-                handleTextChanged(event)
-            }
-            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
-                // Focus shifted to another input field - reset undo state
-                lastUndo = null
-            }
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+            handleTextChanged(event)
+        } else if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+            // Focus shifted to another input field - reset undo state
+            lastUndo = null
         }
     }
 
@@ -154,13 +174,14 @@ class HarfiyAccessibilityService : AccessibilityService() {
             if (source.isShowingHintText) {
                 return ""
             }
+            val hint = source.hintText?.toString()
+            val text = source.text?.toString() ?: ""
+            if (!hint.isNullOrEmpty() && text == hint) {
+                return ""
+            }
+            return text
         }
-        val text = source.text?.toString() ?: ""
-        val hint = source.hintText?.toString()
-        if (!hint.isNullOrEmpty() && text == hint) {
-            return ""
-        }
-        return text
+        return source.text?.toString() ?: ""
     }
 
     private fun handleTextChanged(event: AccessibilityEvent) {
@@ -256,10 +277,10 @@ class HarfiyAccessibilityService : AccessibilityService() {
     private fun recordStat(statKey: String) {
         val total = prefs.getLong(KEY_STATS_TOTAL, 0L) + 1
         val typeCount = prefs.getLong(statKey, 0L) + 1
-        prefs.edit()
-            .putLong(KEY_STATS_TOTAL, total)
-            .putLong(statKey, typeCount)
-            .apply()
+        prefs.edit {
+            putLong(KEY_STATS_TOTAL, total)
+            putLong(statKey, typeCount)
+        }
     }
 
     private fun applyTextChange(source: AccessibilityNodeInfo, newText: String, newCursor: Int) {
@@ -288,8 +309,16 @@ class HarfiyAccessibilityService : AccessibilityService() {
         lastUndo = null
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Keep service alive across UI task swipes
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(prefsReceiver)
+        } catch (_: Exception) {}
         if (instance == this) {
             instance = null
         }
