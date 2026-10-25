@@ -32,6 +32,18 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Quick Settings Tile for 1-Tap Toggle from Notification Shade -->
+        <service
+            android:name=".HarfiyTileService"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Harfiy"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

@@ -74,7 +74,7 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
         }
         scrollView.addView(root)
-
+    
         // Helper to create modern rounded cards
         fun createCard(): LinearLayout {
             return LinearLayout(this).apply {
@@ -612,9 +612,33 @@ class MainActivity : Activity() {
     }
 
     private fun openAccessibilitySettings() {
+        val isSamsung = android.os.Build.MANUFACTURER.contains("samsung", ignoreCase = true)
+        val instructions = if (isSamsung) {
+            "Samsung Galaxy telefonlarida Harfiy'ni faollashtirish (atigi 2 qadam):\n\n" +
+            "1️⃣  Ochilgan menyuda «O‘rnatilgan ilovalar» (Installed apps) bo‘limiga kiring.\n" +
+            "2️⃣  «Harfiy»ni tanlang va bitta switch orqali yoqing.\n\n" +
+            "💡 Shundan so‘ng telefoningizning sevimli klaviaturasida (Gboard, Samsung) odatdagidek yozaverasiz!"
+        } else {
+            "Harfiy'ni faollashtirish:\n\n" +
+            "1️⃣  «Yuklangan ilovalar» (yoki Maxsus imkoniyatlar) bo‘limiga kiring.\n" +
+            "2️⃣  «Harfiy»ni tanlang va yoqing.\n\n" +
+            "💡 Bu ruxsat faqat 1 marta so‘raladi va telefon o‘chib yonsa ham o‘chmaydi."
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Harfiy'ni faollashtirish")
+            .setMessage(instructions)
+            .setPositiveButton("Sozlamalarni ochish") { _, _ ->
+                launchAccessibilitySettingsIntent()
+            }
+            .setNegativeButton("Bekor qilish", null)
+            .show()
+    }
+
+    private fun launchAccessibilitySettingsIntent() {
         val serviceComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name).flattenToString()
 
-        // 1. Try deep-linking directly to Harfiy's specific service toggle screen
+        // 1. Try deep-linking with fragment arguments (Pixel / AOSP / Modern ROMs)
         val deepLinkIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(":settings:fragment_args_key", serviceComponent)
@@ -626,10 +650,10 @@ class MainActivity : Activity() {
 
         try {
             startActivity(deepLinkIntent)
-            Toast.makeText(this, "Harfiy'ni yoqish uchun bitta switchni bosing", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "«O‘rnatilgan ilovalar» -> «Harfiy»ni yoqing", Toast.LENGTH_LONG).show()
             return
         } catch (_: Exception) {
-            // Fallback for custom ROMs that disallow direct fragment arguments
+            // Fallback for custom ROMs
         }
 
         // 2. Standard accessibility settings fallback
@@ -637,7 +661,7 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
-            Toast.makeText(this, "Ro‘yxatdan 'Harfiy'ni tanlang va yoqing", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "«O‘rnatilgan ilovalar» -> «Harfiy»ni yoqing", Toast.LENGTH_LONG).show()
         } catch (_: Exception) {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         }
