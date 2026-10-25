@@ -17,20 +17,14 @@ import android.view.accessibility.AccessibilityNodeInfo
  * Runs seamlessly in the background and intercepts typing across ALL Android apps
  * while the user uses their default system keyboard (Gboard, Samsung, SwiftKey, etc.).
  *
- * Automatically converts Uzbek phonetic pairs in real time:
- *   sh -> ş, ch -> ç, o' -> ö, g' -> ğ (and optionally ng -> ñ)
- *
- * Supports:
- * - Instant Undo: pressing Backspace immediately restores the original two characters.
- * - Excluded Apps: ignores user-specified applications.
- * - Game Mode Auto-Pause: automatically suspends in games and full-screen gaming apps.
- * - Statistics: tracks conversions and saved time.
+ * Single Source of Truth:
+ * - State is completely tied to whether this AccessibilityService is enabled in Android.
+ * - Supports disableSelf() for direct deactivation.
  */
 class HarfiyAccessibilityService : AccessibilityService() {
 
     companion object {
         const val PREFS_NAME = "harfiy_prefs"
-        const val KEY_ENABLED = "harfiy_enabled"
         const val KEY_ENABLE_NG = "harfiy_enable_ng"
         const val KEY_INSTANT_UNDO = "harfiy_instant_undo"
         const val KEY_GAME_PAUSE = "harfiy_game_pause"
@@ -43,6 +37,10 @@ class HarfiyAccessibilityService : AccessibilityService() {
         const val KEY_STATS_O = "stats_o"
         const val KEY_STATS_G = "stats_g"
         const val KEY_STATS_NG = "stats_ng"
+
+        @Volatile
+        var instance: HarfiyAccessibilityService? = null
+            private set
 
         private val APOSTROPHES = charArrayOf('\'', '`', '‘', '’', 'ʻ', 'ʼ', '´')
 
@@ -72,9 +70,24 @@ class HarfiyAccessibilityService : AccessibilityService() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    /**
+     * Programmatically disables this accessibility service in system settings.
+     * Available on Android 7.0 (API 24) and above.
+     */
+    fun disableService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            disableSelf()
+        }
+        instance = null
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (!prefs.getBoolean(KEY_ENABLED, true)) return
 
         // 1. Excluded apps check
         val pkgName = event.packageName?.toString() ?: ""
@@ -258,6 +271,9 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (instance == this) {
+            instance = null
+        }
         lastUndo = null
     }
 }

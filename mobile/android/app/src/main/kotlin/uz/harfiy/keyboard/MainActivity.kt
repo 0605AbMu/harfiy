@@ -24,14 +24,11 @@ import java.util.Locale
 /**
  * Modern dashboard for Harfiy on Android.
  *
- * Implements the full desktop tray menu capabilities:
- * - Faol (Harfiy) toggle & system accessibility check
- * - Matnni o'girish (Magic Batch Text Converter)
- * - 'ng' -> 'ñ' qoidasi
- * - O'yinlarda avtomatik pauza
- * - Istisno dasturlar (Excluded applications manager)
- * - Statistika (Conversions count & time saved)
- * - Veb-sahifa, Blog, and Support links
+ * Implements Single Source of Truth (SSOT):
+ * - The 'Faol (Harfiy)' toggle is 1:1 bound to the system AccessibilityService state.
+ * - Turning it ON opens system Accessibility settings to grant permission.
+ * - Turning it OFF directly disables the service via disableSelf() in system settings.
+ * - No conflicting local flags or duplicate buttons.
  */
 class MainActivity : Activity() {
 
@@ -39,13 +36,15 @@ class MainActivity : Activity() {
     private var engineBridge: HarfiyEngineBridge? = null
 
     // UI elements requiring dynamic updates
-    private lateinit var statusCard: LinearLayout
-    private lateinit var statusText: TextView
-    private lateinit var actionBtn: Button
+    private lateinit var masterCard: LinearLayout
+    private lateinit var masterTitle: TextView
+    private lateinit var masterSubtitle: TextView
     private lateinit var switchActive: Switch
     private lateinit var statsSummaryText: TextView
     private lateinit var statsBreakdownText: TextView
     private lateinit var excludedSummaryText: TextView
+
+    private var isUpdatingUI = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,59 +140,72 @@ class MainActivity : Activity() {
         root.addView(appSubtitle)
 
         // =====================================================================
-        // 2. MASTER STATUS CARD (Faol / Pauza / Sozlama)
+        // 2. MASTER TOGGLE: Faol (Harfiy) - Single Source of Truth
         // =====================================================================
-        statusCard = createCard()
-        root.addView(statusCard)
-
-        statusText = TextView(this).apply {
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
+        masterCard = createCard().apply {
+            isClickable = true
+            isFocusable = true
         }
-        statusCard.addView(statusText)
+        root.addView(masterCard)
 
-        actionBtn = Button(this).apply {
-            text = "Sozlamalardan Harfiy'ni yoqish"
-            textSize = 15f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            val btnDrawable = GradientDrawable().apply {
-                setColor(Color.parseColor("#2563EB"))
-                cornerRadius = dp(10).toFloat()
-            }
-            background = btnDrawable
-            val padBtn = dp(12)
-            setPadding(padBtn, padBtn, padBtn, padBtn)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(10)
-            }
-            setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        val masterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(12)
             }
         }
-        statusCard.addView(actionBtn)
+
+        masterTitle = TextView(this).apply {
+            text = "Faol (Harfiy)"
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#0F172A"))
+        }
+        textColumn.addView(masterTitle)
+
+        masterSubtitle = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, dp(4), 0, 0)
+        }
+        textColumn.addView(masterSubtitle)
+        masterRow.addView(textColumn)
 
         switchActive = Switch(this).apply {
-            text = "Faol (Harfiy)"
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLED, true)
+            isClickable = true
             setOnCheckedChangeListener { _, isChecked ->
-                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLED, isChecked).apply()
-                updateStatus()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(8)
+                if (isUpdatingUI) return@setOnCheckedChangeListener
+
+                val isSystemActive = isAccessibilityServiceEnabled()
+                if (isChecked && !isSystemActive) {
+                    // Turn switch back visually until user actually enables in Settings
+                    isUpdatingUI = true
+                    this.isChecked = false
+                    isUpdatingUI = false
+
+                    openAccessibilitySettings()
+                } else if (!isChecked && isSystemActive) {
+                    // User deliberately turned off: disable the service in system
+                    HarfiyAccessibilityService.instance?.disableService()
+                    updateStatus()
+                }
             }
         }
-        statusCard.addView(switchActive)
+        masterRow.addView(switchActive)
+        masterCard.addView(masterRow)
+
+        // Tapping anywhere on the card when disabled prompts to enable
+        masterCard.setOnClickListener {
+            if (!isAccessibilityServiceEnabled()) {
+                openAccessibilitySettings()
+            } else {
+                switchActive.performClick()
+            }
+        }
 
         // =====================================================================
         // 3. 🪄 MATNNI O'GIRISH (Batch Magic Text Converter)
@@ -598,42 +610,47 @@ class MainActivity : Activity() {
         engineBridge = null
     }
 
+    private fun openAccessibilitySettings() {
+        Toast.makeText(this, "Ro‘yxatdan 'Harfiy'ni tanlang va yoqing", Toast.LENGTH_LONG).show()
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    /**
+     * Single Source of Truth update:
+     * Reflects the EXACT system Accessibility status into the master switch and card.
+     */
     private fun updateStatus() {
         val isServiceEnabled = isAccessibilityServiceEnabled()
-        val isHarfiyActive = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLED, true)
         val dp = resources.displayMetrics.density
 
-        switchActive.isChecked = isHarfiyActive
+        isUpdatingUI = true
+        switchActive.isChecked = isServiceEnabled
+        isUpdatingUI = false
 
-        if (!isServiceEnabled) {
-            statusCard.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FEF2F2"))
-                cornerRadius = 12 * dp
-                setStroke((1.5f * dp).toInt(), Color.parseColor("#FECACA"))
-            }
-            statusText.text = "⚠️ Maxsus imkoniyat yoqilmagan"
-            statusText.setTextColor(Color.parseColor("#991B1B"))
-            actionBtn.visibility = Button.VISIBLE
-            actionBtn.text = "Sozlamalardan Harfiy'ni yoqish"
-            (actionBtn.background as? GradientDrawable)?.setColor(Color.parseColor("#DC2626"))
-        } else if (!isHarfiyActive) {
-            statusCard.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFFBEB"))
-                cornerRadius = 12 * dp
-                setStroke((1.5f * dp).toInt(), Color.parseColor("#FDE68A"))
-            }
-            statusText.text = "⏸️ Harfiy pauza qilingan (Vaqtincha o'chiq)"
-            statusText.setTextColor(Color.parseColor("#92400E"))
-            actionBtn.visibility = Button.GONE
-        } else {
-            statusCard.background = GradientDrawable().apply {
+        if (isServiceEnabled) {
+            masterCard.background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F0FDF4"))
                 cornerRadius = 12 * dp
                 setStroke((1.5f * dp).toInt(), Color.parseColor("#86EFAC"))
             }
-            statusText.text = "✅ Faol (Harfiy tizim klaviaturasida ishlamoqda)"
-            statusText.setTextColor(Color.parseColor("#166534"))
-            actionBtn.visibility = Button.GONE
+            masterTitle.text = "✓ Faol (Harfiy)"
+            masterTitle.setTextColor(Color.parseColor("#166534"))
+            masterSubtitle.text = "Gboard / Samsung klaviaturasi ustida ishlayapti (O‘chirish uchun bosing)"
+            masterSubtitle.setTextColor(Color.parseColor("#15803D"))
+        } else {
+            masterCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FEF2F2"))
+                cornerRadius = 12 * dp
+                setStroke((1.5f * dp).toInt(), Color.parseColor("#FECACA"))
+            }
+            masterTitle.text = "Faol (Harfiy) — O‘chiq"
+            masterTitle.setTextColor(Color.parseColor("#991B1B"))
+            masterSubtitle.text = "Tizim sozlamalaridan yoqish uchun bu yerga bosing"
+            masterSubtitle.setTextColor(Color.parseColor("#DC2626"))
         }
     }
 
