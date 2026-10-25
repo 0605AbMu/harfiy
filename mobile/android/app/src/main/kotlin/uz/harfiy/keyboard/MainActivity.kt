@@ -3,42 +3,55 @@ package uz.harfiy.keyboard
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.accessibility.AccessibilityManager
 import android.widget.*
 import java.util.Locale
 
 /**
- * Modern, clean, human-friendly dashboard for Harfiy.
+ * World-Class, Ultra-Modern Mobile Dashboard for Harfiy.
  *
- * Designed with zero technical jargon so that any ordinary user can immediately
- * understand, activate, test, and customize Harfiy with maximum ease.
+ * Designed with senior UI/UX standards:
+ * - Grand Hero Status Card with instant visual feedback and SSOT binding.
+ * - Grouped iOS/Material 3 style settings with custom icon badges and dividers.
+ * - Unified Magic Text Playground & Batch Converter.
+ * - Gamified impact & statistics with visual character pills.
+ * - Searchable Excluded Apps picker with real launcher app icons.
+ * - One-tap Google Play update checker and official community links.
  */
 class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
     private var engineBridge: HarfiyEngineBridge? = null
 
-    // UI elements requiring dynamic updates
-    private lateinit var masterCard: LinearLayout
-    private lateinit var masterTitle: TextView
-    private lateinit var masterSubtitle: TextView
-    private lateinit var switchActive: Switch
+    // Dynamic UI elements
+    private lateinit var heroCard: LinearLayout
+    private lateinit var heroBadge: TextView
+    private lateinit var heroTitle: TextView
+    private lateinit var heroSubtitle: TextView
+    private lateinit var heroSwitch: Switch
 
     private lateinit var statConversionsCount: TextView
     private lateinit var statTimeSaved: TextView
@@ -60,12 +73,13 @@ class MainActivity : Activity() {
         val dp = resources.displayMetrics.density
         fun dp(v: Int): Int = (v * dp).toInt()
 
+        // Root ScrollView with edge-to-edge support
         val scrollView = ScrollView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.parseColor("#F8FAFC"))
+            setBackgroundColor(Color.parseColor("#F8FAFC")) // Soft premium canvas
             fitsSystemWindows = true
             isFocusableInTouchMode = true
         }
@@ -73,56 +87,80 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             isFocusableInTouchMode = true
-            val pad = dp(18)
-            setPadding(pad, pad, pad, pad)
+            val padH = dp(20)
+            val padV = dp(16)
+            setPadding(padH, padV, padH, dp(32))
         }
         scrollView.addView(root)
 
-        // Helper to create modern rounded cards
+        // Helper: Section Label (uppercase micro-header)
+        fun createSectionLabel(text: String): TextView {
+            return TextView(this).apply {
+                this.text = text
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#64748B"))
+                letterSpacing = 0.05f
+                setPadding(dp(4), dp(16), 0, dp(8))
+            }
+        }
+
+        // Helper: Rounded Card Container
         fun createCard(): LinearLayout {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                val padCard = dp(16)
-                setPadding(padCard, padCard, padCard, padCard)
+                val pad = dp(16)
+                setPadding(pad, pad, pad, pad)
                 background = GradientDrawable().apply {
                     setColor(Color.WHITE)
-                    cornerRadius = dp(16).toFloat()
+                    cornerRadius = dp(20).toFloat()
                     setStroke(dp(1), Color.parseColor("#E2E8F0"))
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dp(16)
-                }
+                )
             }
         }
 
         // =====================================================================
-        // 1. APP HEADER
+        // 1. TOP APP BAR
         // =====================================================================
-        val headerRow = LinearLayout(this).apply {
+        val appBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(2))
+            setPadding(0, dp(4), 0, dp(14))
         }
+
+        val brandCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
         val appTitle = TextView(this).apply {
             text = "Harfiy"
             textSize = 28f
             setTextColor(Color.parseColor("#0F172A"))
             typeface = Typeface.DEFAULT_BOLD
         }
+        titleRow.addView(appTitle)
+
         val versionBadge = TextView(this).apply {
-            text = "1.0.1"
+            text = "v1.0.1 ↗"
             textSize = 12f
             setTextColor(Color.parseColor("#2563EB"))
             typeface = Typeface.DEFAULT_BOLD
             val padH = dp(8)
-            val padV = dp(2)
+            val padV = dp(3)
             setPadding(padH, padV, padH, padV)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#EFF6FF"))
-                cornerRadius = dp(6).toFloat()
+                cornerRadius = dp(8).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -130,55 +168,101 @@ class MainActivity : Activity() {
             ).apply {
                 leftMargin = dp(8)
             }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                openPlayStoreForUpdate()
+            }
         }
-        headerRow.addView(appTitle)
-        headerRow.addView(versionBadge)
-        root.addView(headerRow)
+        titleRow.addView(versionBadge)
+        brandCol.addView(titleRow)
 
         val appSubtitle = TextView(this).apply {
             text = "Yozuvni avtomatik to‘g‘rilovchi aqlli yordamchi"
-            textSize = 14f
+            textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, 0, 0, dp(16))
+            setPadding(0, dp(2), 0, 0)
         }
-        root.addView(appSubtitle)
+        brandCol.addView(appSubtitle)
+        appBar.addView(brandCol)
+        root.addView(appBar)
 
         // =====================================================================
-        // 2. ASOSIY HOLAT (Master Status Card)
+        // 2. GRAND HERO STATUS CARD (Asosiy Holat)
         // =====================================================================
-        masterCard = createCard().apply {
+        heroCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = dp(20)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), Color.parseColor("#E2E8F0"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(4)
+            }
             isClickable = true
             isFocusable = true
+            setOnClickListener {
+                if (!isAccessibilityServiceEnabled()) {
+                    openAccessibilitySettings()
+                } else {
+                    heroSwitch.performClick()
+                }
+            }
         }
-        root.addView(masterCard)
+        root.addView(heroCard)
 
-        val masterRow = LinearLayout(this).apply {
+        // Hero Status Badge Pill
+        heroBadge = TextView(this).apply {
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            val padH = dp(10)
+            val padV = dp(4)
+            setPadding(padH, padV, padH, padV)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+        heroCard.addView(heroBadge)
+
+        // Hero Main Row (Title + Switch)
+        val heroMainRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val textColumn = LinearLayout(this).apply {
+        val heroTextCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 rightMargin = dp(12)
             }
         }
 
-        masterTitle = TextView(this).apply {
-            textSize = 19f
+        heroTitle = TextView(this).apply {
+            textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
         }
-        textColumn.addView(masterTitle)
+        heroTextCol.addView(heroTitle)
 
-        masterSubtitle = TextView(this).apply {
+        heroSubtitle = TextView(this).apply {
             textSize = 13f
             setPadding(0, dp(4), 0, 0)
         }
-        textColumn.addView(masterSubtitle)
-        masterRow.addView(textColumn)
+        heroTextCol.addView(heroSubtitle)
+        heroMainRow.addView(heroTextCol)
 
-        switchActive = Switch(this).apply {
+        heroSwitch = Switch(this).apply {
             isClickable = true
+            scaleX = 1.15f
+            scaleY = 1.15f
             setOnCheckedChangeListener { _, isChecked ->
                 if (isUpdatingUI) return@setOnCheckedChangeListener
 
@@ -195,26 +279,21 @@ class MainActivity : Activity() {
                 }
             }
         }
-        masterRow.addView(switchActive)
-        masterCard.addView(masterRow)
-
-        masterCard.setOnClickListener {
-            if (!isAccessibilityServiceEnabled()) {
-                openAccessibilitySettings()
-            } else {
-                switchActive.performClick()
-            }
-        }
+        heroMainRow.addView(heroSwitch)
+        heroCard.addView(heroMainRow)
 
         // =====================================================================
-        // 3. MATNNI O‘GIRISH VA SINASH (Unified Playground & Converter)
+        // 3. SEHRLI MATN MAYDONI VA SINOV (Unified Playground & Converter)
         // =====================================================================
+        root.addView(createSectionLabel("MATN MAYDONI VA SINOV"))
+
         val convertCard = createCard()
         root.addView(convertCard)
 
-        val convertTitleRow = LinearLayout(this).apply {
+        val convertHeaderRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
         }
         val magicIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_menu_magic)
@@ -223,20 +302,20 @@ class MainActivity : Activity() {
             }
         }
         val convertTitle = TextView(this).apply {
-            text = "Matnni o‘girish va sinash"
-            textSize = 17f
+            text = "Yozib ko‘ring yoki matnni o‘giring"
+            textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#0F172A"))
         }
-        convertTitleRow.addView(magicIcon)
-        convertTitleRow.addView(convertTitle)
-        convertCard.addView(convertTitleRow)
+        convertHeaderRow.addView(magicIcon)
+        convertHeaderRow.addView(convertTitle)
+        convertCard.addView(convertHeaderRow)
 
         val convertSubtitle = TextView(this).apply {
-            text = "Klaviaturangizda yozib ko‘ring yoki istalgan matnni yangi alifboga o‘giring:"
+            text = "Klaviaturangizda «sh, ch, o', g'» deb yozing yoki nusxalangan matnni qo‘ying:"
             textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, dp(4), 0, dp(10))
+            setPadding(0, 0, 0, dp(10))
         }
         convertCard.addView(convertSubtitle)
 
@@ -250,12 +329,14 @@ class MainActivity : Activity() {
             val padField = dp(12)
             setPadding(padField, padField, padField, padField)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F1F5F9"))
-                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#F8FAFC"))
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.parseColor("#E2E8F0"))
             }
         }
         convertCard.addView(convertInput)
 
+        // Action Buttons Row
         val convertBtnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -273,7 +354,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#2563EB"))
-                cornerRadius = dp(10).toFloat()
+                cornerRadius = dp(12).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
                 rightMargin = dp(6)
@@ -300,8 +381,9 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(Color.parseColor("#1E293B"))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E2E8F0"))
-                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#E2E8F0"))
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
                 rightMargin = dp(6)
@@ -322,8 +404,8 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F1F5F9"))
-                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#F8FAFC"))
+                cornerRadius = dp(12).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.9f)
             setOnClickListener {
@@ -334,133 +416,196 @@ class MainActivity : Activity() {
         convertCard.addView(convertBtnRow)
 
         // =====================================================================
-        // 4. QULAY SOZLAMALAR (Settings)
+        // 4. GROUPED SETTINGS (iOS/Material 3 uslubidagi sozlamalar)
         // =====================================================================
+        root.addView(createSectionLabel("QULAY SOZLAMALAR"))
+
         val settingsCard = createCard()
         root.addView(settingsCard)
 
-        val settingsHeader = TextView(this).apply {
-            text = "Qulay sozlamalar"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
-            setPadding(0, 0, 0, dp(6))
-        }
-        settingsCard.addView(settingsHeader)
+        // Helper: Settings Row with Icon Badge
+        fun createSettingSwitchRow(
+            iconEmoji: String,
+            iconBg: String,
+            title: String,
+            subtitle: String,
+            isCheckedInit: Boolean,
+            onChecked: (Boolean) -> Unit
+        ): LinearLayout {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val padV = dp(10)
+                setPadding(0, padV, 0, padV)
+            }
 
-        // Switch: Xatoni qaytarish
-        val switchUndo = Switch(this).apply {
-            text = "Xatoni qaytarish"
-            textSize = 15f
-            setTextColor(Color.parseColor("#334155"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, true)
-            setOnCheckedChangeListener { _, isChecked ->
+            val badge = TextView(this).apply {
+                text = iconEmoji
+                textSize = 16f
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                    rightMargin = dp(12)
+                }
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor(iconBg))
+                    cornerRadius = dp(10).toFloat()
+                }
+            }
+            row.addView(badge)
+
+            val textCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    rightMargin = dp(8)
+                }
+                val t = TextView(context).apply {
+                    text = title
+                    textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.parseColor("#0F172A"))
+                }
+                val s = TextView(context).apply {
+                    text = subtitle
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#64748B"))
+                    setPadding(0, dp(1), 0, 0)
+                }
+                addView(t)
+                addView(s)
+            }
+            row.addView(textCol)
+
+            val sw = Switch(this).apply {
+                isChecked = isCheckedInit
+                setOnCheckedChangeListener { _, checked -> onChecked(checked) }
+            }
+            row.addView(sw)
+
+            return row
+        }
+
+        fun createDivider(): View {
+            return View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(1)
+                ).apply {
+                    leftMargin = dp(48)
+                }
+                setBackgroundColor(Color.parseColor("#F1F5F9"))
+            }
+        }
+
+        // Setting 1: Xatoni qaytarish
+        settingsCard.addView(
+            createSettingSwitchRow(
+                "↩️",
+                "#EFF6FF",
+                "Xatoni qaytarish",
+                "Harf noto‘g‘ri o‘zgarganda, Backspace bosilsa asl holiga qaytadi",
+                prefs.getBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, true)
+            ) { isChecked ->
                 prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, isChecked).apply()
             }
-            setPadding(0, dp(6), 0, dp(4))
-        }
-        settingsCard.addView(switchUndo)
-        val undoHint = TextView(this).apply {
-            text = "Harf noto‘g‘ri o‘zgarganda, Backspace bosilsa asl holiga qaytadi"
-            textSize = 12f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, 0, 0, dp(8))
-        }
-        settingsCard.addView(undoHint)
+        )
+        settingsCard.addView(createDivider())
 
-        // Switch: 'ng' -> 'ñ'
-        val switchNg = Switch(this).apply {
-            text = "«ng» harfini almashtirish"
-            textSize = 15f
-            setTextColor(Color.parseColor("#334155"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
-            setOnCheckedChangeListener { _, isChecked ->
+        // Setting 2: «ng» harfi
+        settingsCard.addView(
+            createSettingSwitchRow(
+                "🔤",
+                "#F5F3FF",
+                "«ng» harfini almashtirish",
+                "«ng» yozganingizda avtomatik «ñ» ga o‘giriladi",
+                prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
+            ) { isChecked ->
                 prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, isChecked).apply()
                 engineBridge?.setEnableNg(isChecked)
             }
-            setPadding(0, dp(6), 0, dp(4))
-        }
-        settingsCard.addView(switchNg)
-        val ngHint = TextView(this).apply {
-            text = "«ng» yozganingizda avtomatik «ñ» ga o‘giriladi"
-            textSize = 12f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, 0, 0, dp(8))
-        }
-        settingsCard.addView(ngHint)
+        )
+        settingsCard.addView(createDivider())
 
-        // Switch: O'yinlarda xalaqit bermaslik
-        val switchGame = Switch(this).apply {
-            text = "O‘yinlarda xalaqit bermaslik"
-            textSize = 15f
-            setTextColor(Color.parseColor("#334155"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, true)
-            setOnCheckedChangeListener { _, isChecked ->
+        // Setting 3: O'yinlarda to'xtatish
+        settingsCard.addView(
+            createSettingSwitchRow(
+                "🎮",
+                "#FEF3C7",
+                "O‘yinlarda xalaqit bermaslik",
+                "O‘yin o‘ynayotganingizda Harfiy avtomatik to‘xtatiladi",
+                prefs.getBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, true)
+            ) { isChecked ->
                 prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, isChecked).apply()
             }
-            setPadding(0, dp(6), 0, dp(4))
-        }
-        settingsCard.addView(switchGame)
-        val gameHint = TextView(this).apply {
-            text = "O‘yin o‘ynayotganingizda Harfiy avtomatik to‘xtatiladi"
-            textSize = 12f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, 0, 0, dp(12))
-        }
-        settingsCard.addView(gameHint)
+        )
+        settingsCard.addView(createDivider())
 
-        // Row: Keraksiz ilovalarda o'chirish
+        // Setting 4: Tanlangan ilovalarda o'chirish (Searchable picker)
         val excludedRow = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val padEx = dp(12)
-            setPadding(padEx, padEx, padEx, padEx)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F8FAFC"))
-                cornerRadius = dp(10).toFloat()
-            }
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padV = dp(10)
+            setPadding(0, padV, 0, padV)
             isClickable = true
             isFocusable = true
             setOnClickListener {
                 showExcludedAppsDialog()
             }
         }
-        val excludedTitleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+
+        val exBadge = TextView(this).apply {
+            text = "🚫"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FEE2E2"))
+                cornerRadius = dp(10).toFloat()
+            }
         }
-        val exTitle = TextView(this).apply {
-            text = "Tanlangan ilovalarda o‘chirish"
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
+        excludedRow.addView(exBadge)
+
+        val exTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            val t = TextView(context).apply {
+                text = "Tanlangan ilovalarda o‘chirish"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#0F172A"))
+            }
+            excludedSubtitle = TextView(context).apply {
+                textSize = 12f
+                setTextColor(Color.parseColor("#64748B"))
+                setPadding(0, dp(1), 0, 0)
+            }
+            addView(t)
+            addView(excludedSubtitle)
         }
+        excludedRow.addView(exTextCol)
+
         val exArrow = TextView(this).apply {
             text = "›"
-            textSize = 20f
+            textSize = 22f
             setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(dp(4), 0, dp(4), 0)
         }
-        excludedTitleRow.addView(exTitle)
-        excludedTitleRow.addView(exArrow)
-        excludedRow.addView(excludedTitleRow)
-
-        excludedSubtitle = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, dp(2), 0, 0)
-        }
-        excludedRow.addView(excludedSubtitle)
+        excludedRow.addView(exArrow)
         settingsCard.addView(excludedRow)
 
         // =====================================================================
-        // 5. SIZNING NATIJALARINGIZ (Statistics)
+        // 5. GAMIFIED IMPACT & STATISTICS (Sizning natijalaringiz)
         // =====================================================================
+        root.addView(createSectionLabel("SIZNING NATIJALARINGIZ"))
+
         val statsCard = createCard()
         root.addView(statsCard)
 
         val statsTitleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
         }
         val statsIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_menu_stats)
@@ -469,36 +614,35 @@ class MainActivity : Activity() {
             }
         }
         val statsTitle = TextView(this).apply {
-            text = "Sizning natijalaringiz"
-            textSize = 17f
+            text = "Harfiy bilan tejalgan vaqtingiz"
+            textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#0F172A"))
         }
         statsTitleRow.addView(statsIcon)
         statsTitleRow.addView(statsTitle)
         statsCard.addView(statsTitleRow)
 
-        // Metric boxes row
+        // 2 Big Metric Showcase Boxes
         val metricsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(12)
-                bottomMargin = dp(10)
+                bottomMargin = dp(12)
             }
         }
 
-        fun createMetricBox(valueView: TextView, labelText: String): LinearLayout {
+        fun createMetricBox(valueView: TextView, labelText: String, bgTint: String): LinearLayout {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                val padBox = dp(12)
+                val padBox = dp(14)
                 setPadding(padBox, padBox, padBox, padBox)
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#F1F5F9"))
-                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.parseColor(bgTint))
+                    cornerRadius = dp(14).toFloat()
                 }
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     rightMargin = dp(4)
@@ -509,27 +653,27 @@ class MainActivity : Activity() {
                     text = labelText
                     textSize = 12f
                     setTextColor(Color.parseColor("#64748B"))
-                    setPadding(0, dp(2), 0, 0)
+                    setPadding(0, dp(3), 0, 0)
                 }
                 addView(label)
             }
         }
 
         statConversionsCount = TextView(this).apply {
-            textSize = 20f
+            textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#2563EB"))
         }
         statTimeSaved = TextView(this).apply {
-            textSize = 20f
+            textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#059669"))
         }
-        metricsRow.addView(createMetricBox(statConversionsCount, "To‘g‘rilangan harflar"))
-        metricsRow.addView(createMetricBox(statTimeSaved, "Tejalgan vaqt"))
+        metricsRow.addView(createMetricBox(statConversionsCount, "To‘g‘rilangan harflar", "#EFF6FF"))
+        metricsRow.addView(createMetricBox(statTimeSaved, "Tejalgan vaqt", "#ECFDF5"))
         statsCard.addView(metricsRow)
 
-        // Pill breakdown for characters
+        // Pills Row for individual characters
         statPillsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -565,81 +709,143 @@ class MainActivity : Activity() {
         statsCard.addView(btnClearStats)
 
         // =====================================================================
-        // 6. BIZ BILAN BOG‘LANISH (Links & About)
+        // 6. LOYIHA VA HAMJAMIYAT (Updates & Community Links)
         // =====================================================================
+        root.addView(createSectionLabel("LOYIHA VA HAMJAMIYAT"))
+
         val linksCard = createCard()
         root.addView(linksCard)
 
-        val linksTitle = TextView(this).apply {
-            text = "Biz bilan bog‘lanish"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
-            setPadding(0, 0, 0, dp(10))
-        }
-        linksCard.addView(linksTitle)
-
-        fun createLinkRow(iconRes: Int, label: String, sublabel: String, url: String): LinearLayout {
+        fun createLinkRow(
+            iconRes: Int,
+            badgeBgColor: String,
+            title: String,
+            subtitle: String,
+            url: String
+        ): LinearLayout {
             return LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                val padRow = dp(10)
+                val padRow = dp(12)
                 setPadding(padRow, padRow, padRow, padRow)
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#F8FAFC"))
-                    cornerRadius = dp(10).toFloat()
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), Color.parseColor("#E2E8F0"))
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    bottomMargin = dp(8)
+                    bottomMargin = dp(10)
                 }
+                isClickable = true
+                isFocusable = true
                 setOnClickListener {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    } catch (_: Exception) {
-                        Toast.makeText(this@MainActivity, "Havolani ochib bo‘lmadi", Toast.LENGTH_SHORT).show()
+                    if (url.startsWith("market://")) {
+                        openPlayStoreForUpdate()
+                    } else {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (_: Exception) {
+                            Toast.makeText(this@MainActivity, "Havolani ochib bo‘lmadi", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
-                val icon = ImageView(context).apply {
-                    setImageResource(iconRes)
-                    layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply {
-                        rightMargin = dp(12)
+
+                // Modern visual icon badge
+                val badge = FrameLayout(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                        rightMargin = dp(14)
                     }
+                    background = GradientDrawable().apply {
+                        setColor(Color.parseColor(badgeBgColor))
+                        cornerRadius = dp(12).toFloat()
+                    }
+                    val icon = ImageView(context).apply {
+                        setImageResource(iconRes)
+                        layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
+                    }
+                    addView(icon)
                 }
+                addView(badge)
+
+                // Text column
                 val col = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     val t = TextView(context).apply {
-                        text = label
+                        text = title
                         textSize = 15f
                         typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(Color.parseColor("#1E293B"))
+                        setTextColor(Color.parseColor("#0F172A"))
                     }
                     val s = TextView(context).apply {
-                        text = sublabel
+                        text = subtitle
                         textSize = 12f
                         setTextColor(Color.parseColor("#64748B"))
+                        setPadding(0, dp(2), 0, 0)
                     }
                     addView(t)
                     addView(s)
                 }
-                addView(icon)
                 addView(col)
+
+                // Chevron
+                val arrow = TextView(context).apply {
+                    text = "›"
+                    textSize = 22f
+                    setTextColor(Color.parseColor("#94A3B8"))
+                    setPadding(dp(4), 0, dp(4), 0)
+                }
+                addView(arrow)
             }
         }
 
-        linksCard.addView(createLinkRow(R.drawable.ic_menu_web, "Rasmiy veb-sahifa", "harfiy.uz", "https://abdumannon-shamsiyev.uz/harfiy"))
-        linksCard.addView(createLinkRow(R.drawable.ic_menu_blog, "Telegram kanal", "@abdumannon_notes", "https://t.me/abdumannon_notes"))
-        linksCard.addView(createLinkRow(R.drawable.ic_menu_support, "Savollar va takliflar", "@abdumannon_shamsiyev", "https://t.me/abdumannon_shamsiyev"))
+        linksCard.addView(
+            createLinkRow(
+                R.drawable.ic_link_update,
+                "#F5F3FF",
+                "Yangilanishlarni tekshirish",
+                "Google Play Store • Joriy versiya: 1.0.1",
+                "market://details?id=$packageName"
+            )
+        )
+        linksCard.addView(
+            createLinkRow(
+                R.drawable.ic_link_globe,
+                "#EFF6FF",
+                "Rasmiy veb-sahifa",
+                "harfiy.uz • Yangiliklar va qo‘llanma",
+                "https://abdumannon-shamsiyev.uz/harfiy"
+            )
+        )
+        linksCard.addView(
+            createLinkRow(
+                R.drawable.ic_link_telegram,
+                "#E0F2FE",
+                "Telegram kanal",
+                "@abdumannon_notes • Muallif blogi",
+                "https://t.me/abdumannon_notes"
+            )
+        )
+        linksCard.addView(
+            createLinkRow(
+                R.drawable.ic_link_support,
+                "#ECFDF5",
+                "Savollar va takliflar",
+                "@abdumannon_shamsiyev • To‘g‘ridan-to‘g‘ri aloqa",
+                "https://t.me/abdumannon_shamsiyev"
+            )
+        )
 
         // Footer note
         val footer = TextView(this).apply {
-            text = "Harfiy • 100% oflayn va xavfsiz"
+            text = "Harfiy • 100% oflayn va xavfsiz\nO‘zbekiston uchun mehr bilan yaratildi ❤️"
             textSize = 12f
             setTextColor(Color.parseColor("#94A3B8"))
             gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(16))
+            setPadding(0, dp(14), 0, dp(20))
         }
         root.addView(footer)
 
@@ -713,34 +919,63 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun openPlayStoreForUpdate() {
+        val appPackageName = packageName
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$appPackageName")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$appPackageName")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (_: Exception) {
+                Toast.makeText(this, "Google Play Store ochilmadi", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun updateStatus() {
         val isServiceEnabled = isAccessibilityServiceEnabled()
         val dp = resources.displayMetrics.density
 
         isUpdatingUI = true
-        switchActive.isChecked = isServiceEnabled
+        heroSwitch.isChecked = isServiceEnabled
         isUpdatingUI = false
 
         if (isServiceEnabled) {
-            masterCard.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#ECFDF5"))
-                cornerRadius = 16 * dp
+            heroCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#ECFDF5")) // Soft emerald tint
+                cornerRadius = 24 * dp
                 setStroke((1.5f * dp).toInt(), Color.parseColor("#A7F3D0"))
             }
-            masterTitle.text = "🟢  Harfiy ishlamoqda"
-            masterTitle.setTextColor(Color.parseColor("#065F46"))
-            masterSubtitle.text = "Klaviaturangizda yozganingizda harflar to‘g‘rilanadi"
-            masterSubtitle.setTextColor(Color.parseColor("#047857"))
-        } else {
-            masterCard.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FEF2F2"))
-                cornerRadius = 16 * dp
-                setStroke((1.5f * dp).toInt(), Color.parseColor("#FECACA"))
+            heroBadge.text = "🟢  TIZIMDA FAOL"
+            heroBadge.setTextColor(Color.parseColor("#047857"))
+            heroBadge.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D1FAE5"))
+                cornerRadius = 10 * dp
             }
-            masterTitle.text = "⚪  Harfiy o‘chirilgan"
-            masterTitle.setTextColor(Color.parseColor("#991B1B"))
-            masterSubtitle.text = "Yoqish uchun bu yerga bosing"
-            masterSubtitle.setTextColor(Color.parseColor("#DC2626"))
+            heroTitle.text = "Harfiy ishlamoqda"
+            heroTitle.setTextColor(Color.parseColor("#065F46"))
+            heroSubtitle.text = "Klaviaturangizda yangi alifbo avtomatik to‘g‘rilanadi"
+            heroSubtitle.setTextColor(Color.parseColor("#047857"))
+        } else {
+            heroCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FFF1F2")) // Soft rose tint
+                cornerRadius = 24 * dp
+                setStroke((1.5f * dp).toInt(), Color.parseColor("#FECDD3"))
+            }
+            heroBadge.text = "⚪  TIZIMDA TO‘XTATILGAN"
+            heroBadge.setTextColor(Color.parseColor("#BE123C"))
+            heroBadge.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FFE4E6"))
+                cornerRadius = 10 * dp
+            }
+            heroTitle.text = "Harfiy o‘chirilgan"
+            heroTitle.setTextColor(Color.parseColor("#9F1239"))
+            heroSubtitle.text = "Klaviaturada harflarni to‘g‘rilash uchun bosing"
+            heroSubtitle.setTextColor(Color.parseColor("#BE123C"))
         }
     }
 
@@ -755,7 +990,7 @@ class MainActivity : Activity() {
         val minutesSaved = String.format(Locale.US, "%.1f", (total * 0.8) / 60.0)
 
         statConversionsCount.text = "$total ta"
-        statTimeSaved.text = "~$minutesSaved daqiqa"
+        statTimeSaved.text = "~$minutesSaved daq"
 
         // Update visual pill breakdown
         val dp = resources.displayMetrics.density
@@ -769,10 +1004,10 @@ class MainActivity : Activity() {
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.parseColor("#334155"))
-                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setPadding(dp(10), dp(5), dp(10), dp(5))
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#F1F5F9"))
-                    cornerRadius = dp(6).toFloat()
+                    cornerRadius = dp(8).toFloat()
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -799,7 +1034,21 @@ class MainActivity : Activity() {
         excludedSubtitle.text = if (excluded.isEmpty()) {
             "Barcha ilovalarda ishlamoqda"
         } else {
-            "${excluded.size} ta ilovada o‘chirilgan"
+            "${excluded.size} ta ilovada to‘xtatilgan"
+        }
+    }
+
+    private data class ExcludedAppItem(
+        val packageName: String,
+        val label: String,
+        val resolveInfo: ResolveInfo
+    ) {
+        var cachedIcon: Drawable? = null
+        fun loadIcon(pm: PackageManager): Drawable {
+            if (cachedIcon == null) {
+                cachedIcon = resolveInfo.loadIcon(pm)
+            }
+            return cachedIcon!!
         }
     }
 
@@ -812,43 +1061,259 @@ class MainActivity : Activity() {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
         val resolveList = pm.queryIntentActivities(mainIntent, 0)
-        val installedApps = resolveList
-            .map { it.activityInfo.applicationInfo }
-            .filter { it.packageName != packageName } // Harfiy'ning o'zini ro'yxatdan chiqarib tashlaymiz
-            .distinctBy { it.packageName }
-            .sortedBy { pm.getApplicationLabel(it).toString().lowercase(Locale.getDefault()) }
+        val allApps = resolveList
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .map {
+                ExcludedAppItem(
+                    packageName = it.activityInfo.packageName,
+                    label = it.loadLabel(pm).toString(),
+                    resolveInfo = it
+                )
+            }
+            .sortedBy { it.label.lowercase(Locale.getDefault()) }
 
-        if (installedApps.isEmpty()) {
+        if (allApps.isEmpty()) {
             Toast.makeText(this, "Ilovalar topilmadi", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val appNames = installedApps.map { pm.getApplicationLabel(it).toString() }.toTypedArray()
-        val checkedItems = installedApps.map { currentExcluded.contains(it.packageName) }.toBooleanArray()
+        val dp = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * dp).toInt()
 
-        AlertDialog.Builder(this)
-            .setTitle("Tanlangan ilovalarda o‘chirish")
-            .setMultiChoiceItems(appNames, checkedItems) { _, which, isChecked ->
-                val pkg = installedApps[which].packageName
-                if (isChecked) {
-                    currentExcluded.add(pkg)
-                } else {
-                    currentExcluded.remove(pkg)
-                }
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(20).toFloat()
             }
-            .setPositiveButton("Saqlash") { _, _ ->
+            val pad = dp(16)
+            setPadding(pad, pad, pad, pad)
+        }
+
+        // Title and description
+        val titleView = TextView(this).apply {
+            text = "Tanlangan ilovalarda o‘chirish"
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#0F172A"))
+        }
+        dialogView.addView(titleView)
+
+        val subtitleView = TextView(this).apply {
+            text = "Belgilangan ilovalarda Harfiy ishlamaydi"
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, dp(2), 0, dp(12))
+        }
+        dialogView.addView(subtitleView)
+
+        // Search Bar
+        val searchBox = EditText(this).apply {
+            hint = "🔍  Ilovani qidirish..."
+            textSize = 14f
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            val padSearch = dp(10)
+            setPadding(padSearch, padSearch, padSearch, padSearch)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#E2E8F0"))
+            }
+            isSingleLine = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+        dialogView.addView(searchBox)
+
+        // ListView & Dynamic List
+        var filteredApps = allApps.toMutableList()
+        lateinit var saveBtn: Button
+
+        fun updateSaveBtnText() {
+            val count = currentExcluded.size
+            saveBtn.text = if (count == 0) "Saqlash" else "Saqlash ($count)"
+        }
+
+        val listView = ListView(this).apply {
+            divider = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                setSize(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+            }
+            dividerHeight = dp(1)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        val adapter = object : BaseAdapter() {
+            override fun getCount(): Int = filteredApps.size
+            override fun getItem(position: Int): ExcludedAppItem = filteredApps[position]
+            override fun getItemId(position: Int): Long = position.toLong()
+
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val row = (convertView as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    val padRow = dp(8)
+                    setPadding(dp(4), padRow, dp(4), padRow)
+                    isClickable = true
+
+                    val icon = ImageView(this@MainActivity).apply {
+                        tag = "icon"
+                        layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply {
+                            rightMargin = dp(12)
+                        }
+                    }
+                    addView(icon)
+
+                    val textCol = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+
+                        val name = TextView(this@MainActivity).apply {
+                            tag = "name"
+                            textSize = 15f
+                            setTextColor(Color.parseColor("#1E293B"))
+                            typeface = Typeface.DEFAULT_BOLD
+                            isSingleLine = true
+                        }
+                        addView(name)
+                    }
+                    addView(textCol)
+
+                    val checkbox = CheckBox(this@MainActivity).apply {
+                        tag = "checkbox"
+                        isFocusable = false
+                        isClickable = false
+                    }
+                    addView(checkbox)
+                }
+
+                val item = getItem(position)
+                val iconView = row.findViewWithTag<ImageView>("icon")
+                val nameView = row.findViewWithTag<TextView>("name")
+                val checkView = row.findViewWithTag<CheckBox>("checkbox")
+
+                nameView.text = item.label
+                iconView.setImageDrawable(item.loadIcon(pm))
+                checkView.isChecked = currentExcluded.contains(item.packageName)
+
+                row.setOnClickListener {
+                    if (currentExcluded.contains(item.packageName)) {
+                        currentExcluded.remove(item.packageName)
+                        checkView.isChecked = false
+                    } else {
+                        currentExcluded.add(item.packageName)
+                        checkView.isChecked = true
+                    }
+                    updateSaveBtnText()
+                }
+
+                return row
+            }
+        }
+
+        listView.adapter = adapter
+        dialogView.addView(listView)
+
+        // Real-time search filter
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val query = s?.toString()?.trim()?.lowercase(Locale.getDefault()) ?: ""
+                filteredApps = if (query.isEmpty()) {
+                    allApps.toMutableList()
+                } else {
+                    allApps.filter { it.label.lowercase(Locale.getDefault()).contains(query) }.toMutableList()
+                }
+                adapter.notifyDataSetChanged()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        // Action Buttons Row
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(12)
+            }
+        }
+
+        val btnCancel = Button(this).apply {
+            text = "Bekor qilish"
+            textSize = 14f
+            setTextColor(Color.parseColor("#64748B"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(12).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8)
+            }
+            setOnClickListener {
+                dialog.dismiss()
+            }
+        }
+        btnRow.addView(btnCancel)
+
+        saveBtn = Button(this).apply {
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2563EB"))
+                cornerRadius = dp(12).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
                 prefs.edit().putStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, currentExcluded).apply()
                 updateExcludedAppsSummary()
-                Toast.makeText(this, "Saqlandi", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Saqlandi", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
             }
-            .setNegativeButton("Bekor qilish", null)
-            .show()
+        }
+        updateSaveBtnText()
+        btnRow.addView(saveBtn)
+        dialogView.addView(btnRow)
+
+        dialog.setContentView(dialogView)
+
+        dialog.window?.apply {
+            val width = (resources.displayMetrics.widthPixels * 0.92).toInt()
+            val height = (resources.displayMetrics.heightPixels * 0.82).toInt()
+            setLayout(width, height)
+            setBackgroundDrawableResource(android.R.color.transparent)
+        }
+
+        dialog.show()
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name)
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        if (enabledServices.contains(expectedComponent.flattenToString()) ||
+            enabledServices.contains("${packageName}/") ||
+            enabledServices.contains(HarfiyAccessibilityService::class.java.name)) {
+            return true
+        }
+
         val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
-        val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-        return enabledServices.any {
+        val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        return list.any {
             it.resolveInfo.serviceInfo.packageName == packageName &&
             it.resolveInfo.serviceInfo.name.contains("HarfiyAccessibilityService")
         }
