@@ -958,6 +958,88 @@ impl KeyboardEmitter for WindowsEmitter {
 
         Ok(())
     }
+
+    fn emit_transform(
+        &mut self,
+        backspaces_count: usize,
+        replacement: &str,
+    ) -> Result<(), PlatformError> {
+        let code_units: Vec<u16> = replacement.encode_utf16().collect();
+        let total_inputs = backspaces_count * 2 + code_units.len() * 2;
+        if total_inputs == 0 {
+            return Ok(());
+        }
+
+        let mut inputs = Vec::with_capacity(total_inputs);
+
+        // 1. Backspaces (key down + key up)
+        for _ in 0..backspaces_count {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_BACK,
+                        wScan: 0,
+                        dwFlags: KEYBD_EVENT_FLAGS(0),
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_BACK,
+                        wScan: 0,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+        }
+
+        // 2. Unicode characters (key down + key up)
+        for cu in code_units {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: cu,
+                        dwFlags: KEYEVENTF_UNICODE,
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: cu,
+                        dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+        }
+
+        // Send all synthetic inputs in one single atomic batch
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != inputs.len() {
+            return Err(PlatformError::SendInputFailed(format!(
+                "Expected to send {} inputs, sent {}",
+                inputs.len(),
+                sent
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 /// Windows keyboard hook interceptor using `WH_KEYBOARD_LL`.
@@ -1097,11 +1179,45 @@ fn vk_to_unicode(vk: VIRTUAL_KEY, scan_code: u32) -> Option<char> {
         return None;
     }
 
-    let mut buffer = [0u16; 8];
-    let hkl = unsafe { GetKeyboardLayout(0) };
+    // Synchronize critical modifier keys directly via GetKeyState,
+    // because WH_KEYBOARD_LL runs on Harfiy's background worker thread
+    // where GetKeyboardState may not reflect the active window thread's state.
+    unsafe {
+        if (GetKeyState(VK_SHIFT.0 as i32) & 0x8000u16 as i16) != 0 {
+            key_state[VK_SHIFT.0 as usize] = 0x80;
+        }
+        if (GetKeyState(VK_CAPITAL.0 as i32) & 0x0001) != 0 {
+            key_state[VK_CAPITAL.0 as usize] = 0x01;
+        }
+        if (GetKeyState(VK_CONTROL.0 as i32) & 0x8000u16 as i16) != 0 {
+            key_state[VK_CONTROL.0 as usize] = 0x80;
+        }
+        if (GetKeyState(VK_MENU.0 as i32) & 0x8000u16 as i16) != 0 {
+            key_state[VK_MENU.0 as usize] = 0x80;
+        }
+    }
 
-    // wFlags = 4 prevents altering dead key status on modern Windows
-    let count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, hkl) };
+    let mut buffer = [0u16; 8];
+
+    // Query keyboard layout of the currently focused active window thread.
+    // Harfiy's background thread layout does not update when the user switches input language.
+    let hkl = unsafe {
+        let fg = GetForegroundWindow();
+        if !fg.0.is_null() {
+            let thread_id = GetWindowThreadProcessId(fg, None);
+            GetKeyboardLayout(thread_id)
+        } else {
+            GetKeyboardLayout(0)
+        }
+    };
+
+    // wFlags = 4 prevents altering dead key status on Windows 10 v1607 and newer.
+    // On older Windows (e.g. Windows 10 LTSB 2015 / Build 10240, Windows 7/8), passing 4
+    // causes ToUnicodeEx to return 0. We gracefully fallback to wFlags = 0.
+    let mut count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, hkl) };
+    if count == 0 {
+        count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 0, hkl) };
+    }
 
     if count == 1 {
         char::from_u32(buffer[0] as u32)
@@ -1182,12 +1298,10 @@ unsafe extern "system" fn low_level_keyboard_proc(
                     backspaces_count,
                     replacement,
                 } => {
-                    // 1. Emit backspace(s) to erase previous character(s)
+                    // Emit backspace(s) and replacement text atomically in one batch
                     let mut emitter = WindowsEmitter::new();
-                    let _ = emitter.emit_backspace(backspaces_count);
-                    // 2. Emit replacement text
-                    let _ = emitter.emit_unicode(replacement);
-                    // 3. Swallow the current key event so it is not typed
+                    let _ = emitter.emit_transform(backspaces_count, replacement);
+                    // Swallow the current key event so it is not typed
                     return LRESULT(1);
                 }
             }

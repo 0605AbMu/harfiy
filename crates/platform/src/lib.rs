@@ -58,6 +58,17 @@ pub trait KeyboardEmitter: Send + Sync {
 
     /// Emit Unicode text as synthetic keyboard input.
     fn emit_unicode(&mut self, text: &str) -> Result<(), PlatformError>;
+
+    /// Emit backspaces followed by replacement unicode text (atomically if supported).
+    fn emit_transform(
+        &mut self,
+        backspaces_count: usize,
+        replacement: &str,
+    ) -> Result<(), PlatformError> {
+        self.emit_backspace(backspaces_count)?;
+        self.emit_unicode(replacement)?;
+        Ok(())
+    }
 }
 
 pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
