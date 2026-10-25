@@ -83,18 +83,13 @@ class HarfiyEngineBridge(enableNg: Boolean = false) : AutoCloseable {
     /**
      * Dynamically update 'ng' rule configuration.
      */
-    fun setEnableNg(enable: Boolean) {
-        if (handle != 0L) {
-            setEnableNg(handle, enable)
+    var isEnableNg: Boolean
+        get() = if (handle != 0L) Companion.isEnableNg(handle) else false
+        set(enable) {
+            if (handle != 0L) {
+                Companion.setEnableNg(handle, enable)
+            }
         }
-    }
-
-    /**
-     * Query if 'ng' rule is enabled.
-     */
-    fun isEnableNg(): Boolean {
-        return if (handle != 0L) isEnableNg(handle) else false
-    }
 
     /**
      * Process a typed character.
@@ -143,7 +138,7 @@ class HarfiyEngineBridge(enableNg: Boolean = false) : AutoCloseable {
      */
     fun convertText(text: String, smartApostrophe: Boolean = true): String {
         return if (handle != 0L) {
-            convertText(text, isEnableNg(), smartApostrophe)
+            convertText(text, isEnableNg, smartApostrophe)
         } else {
             text
         }
