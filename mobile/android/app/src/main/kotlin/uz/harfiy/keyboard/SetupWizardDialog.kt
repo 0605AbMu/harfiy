@@ -308,9 +308,43 @@ class SetupWizardDialog(
             textSize = 14f
             setTextColor(if (isServiceActive) Color.parseColor("#047857") else Color.parseColor("#475569"))
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, 0, 0, dp(16))
+            setPadding(0, 0, 0, dp(14))
         }
         contentContainer.addView(desc)
+
+        // Prominent Disclosure for Google Play Policy compliance
+        val disclosureBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = dp(10)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#EFF6FF"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#BFDBFE"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(12)
+            }
+            val discTitle = TextView(context).apply {
+                text = "🛡️ Maxfiylik va Ruxsat Kafolati"
+                textSize = 12.5f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#1E40AF"))
+                setPadding(0, 0, 0, dp(3))
+            }
+            val discBody = TextView(context).apply {
+                text = "Harfiy Android AccessibilityService API dan faqat yozayotganingizda «sh, ch, o', g'» harflarini aniqlab, «ş, ç, ö, ğ» ga almashtirish uchun foydalanadi. Ilova hech qanday shaxsiy ma’lumot, parol yoki xabarlarni yozib olmaydi, saqlamaydi va internetga uzatmaydi (100% oflayn)."
+                textSize = 11.5f
+                setTextColor(Color.parseColor("#1E3A8A"))
+                setLineSpacing(dp(1).toFloat(), 1.15f)
+            }
+            addView(discTitle)
+            addView(discBody)
+        }
+        contentContainer.addView(disclosureBox)
 
         // Instruction Box
         val guideCard = LinearLayout(context).apply {
