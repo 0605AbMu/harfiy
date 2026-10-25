@@ -3,6 +3,7 @@ package uz.harfiy.keyboard
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,7 +20,7 @@ import android.view.accessibility.AccessibilityNodeInfo
  *   sh -> ş, ch -> ç, o' -> ö, g' -> ğ (and optionally ng -> ñ)
  *
  * Supports Harfiy's signature Instant Undo: pressing Backspace immediately after
- * conversion restores the original two-character trigger.
+ * conversion restores the exact pre-conversion text without leaking hints/placeholders.
  */
 class HarfiyAccessibilityService : AccessibilityService() {
 
@@ -41,9 +42,9 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
     private data class UndoState(
         val nodeHashCode: Int,
-        val originalPair: String,
-        val replacementLength: Int,
-        val replacementStart: Int
+        val restoredFullText: String,
+        val restoredCursor: Int,
+        val replacementIndex: Int
     )
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -72,6 +73,24 @@ class HarfiyAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Extracts actual user-typed text from the node, safely stripping any
+     * placeholder / hintText that Android framework might return when the field is empty.
+     */
+    private fun getActualText(source: AccessibilityNodeInfo): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (source.isShowingHintText) {
+                return ""
+            }
+        }
+        val text = source.text?.toString() ?: ""
+        val hint = source.hintText?.toString()
+        if (!hint.isNullOrEmpty() && text == hint) {
+            return ""
+        }
+        return text
+    }
+
     private fun handleTextChanged(event: AccessibilityEvent) {
         if (isSelfUpdating) return
 
@@ -81,20 +100,16 @@ class HarfiyAccessibilityService : AccessibilityService() {
         val fromIndex = event.fromIndex
         val addedCount = event.addedCount
         val removedCount = event.removedCount
-        val currentText = source.text?.toString() ?: ""
+        val currentText = getActualText(source)
 
         // Case 1: Instant Undo check (User pressed Backspace right after our transformation)
         val instantUndoEnabled = prefs.getBoolean(KEY_INSTANT_UNDO, true)
         val undo = lastUndo
         if (instantUndoEnabled && undo != null && addedCount == 0 && removedCount == 1) {
-            if (fromIndex == undo.replacementStart) {
-                // The user just deleted our replacement character. Restore the original trigger!
-                val prefix = currentText.substring(0, fromIndex)
-                val suffix = currentText.substring(fromIndex)
-                val restoredText = prefix + undo.originalPair + suffix
-                val restoredCursor = prefix.length + undo.originalPair.length
-
-                applyTextChange(source, restoredText, restoredCursor)
+            if (fromIndex == undo.replacementIndex) {
+                // The user just deleted our replacement character.
+                // Restore the exact pre-replacement string (never touches the hint/placeholder).
+                applyTextChange(source, undo.restoredFullText, undo.restoredCursor)
                 lastUndo = null
                 return
             }
@@ -121,13 +136,16 @@ class HarfiyAccessibilityService : AccessibilityService() {
         val newText = prefix + replacement + suffix
         val newCursor = prefix.length + replacement.length
 
-        // Save undo state before applying
+        // Save pristine full text for instant undo (independent of future node hint states)
         val originalPair = "$prevChar$currChar"
+        val restoredFullText = prefix + originalPair + suffix
+        val restoredCursor = prefix.length + originalPair.length
+
         lastUndo = UndoState(
             nodeHashCode = source.hashCode(),
-            originalPair = originalPair,
-            replacementLength = replacement.length,
-            replacementStart = prefix.length
+            restoredFullText = restoredFullText,
+            restoredCursor = restoredCursor,
+            replacementIndex = prefix.length
         )
 
         applyTextChange(source, newText, newCursor)
@@ -175,7 +193,6 @@ class HarfiyAccessibilityService : AccessibilityService() {
                 source.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selArgs)
             }
         } finally {
-            // Give system event queue a moment before listening to text changes again
             mainHandler.postDelayed({
                 isSelfUpdating = false
             }, 30)
