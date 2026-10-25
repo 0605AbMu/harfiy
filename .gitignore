@@ -14,3 +14,6 @@ Thumbs.db
 mobile/ios/Frameworks/
 mobile/android/app/src/main/jniLibs/
 
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/app/build/
