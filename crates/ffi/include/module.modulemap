@@ -1,0 +1,4 @@
+module HarfiyCore [system] {
+    header "harfiy.h"
+    export *
+}

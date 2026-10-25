@@ -1,0 +1,17 @@
+[package]
+name = "harfiy-ffi"
+version = "1.0.1"
+edition = "2021"
+authors = ["Abdumannon Shamsiyev"]
+description = "C-ABI and JNI mobile bindings for Harfiy Engine (iOS & Android)"
+license = "MIT"
+repository = "https://github.com/0605AbMu/harfiy"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+harfiy-engine = { path = "../engine" }
+jni = { version = "0.21", default-features = false }
+
+[dev-dependencies]

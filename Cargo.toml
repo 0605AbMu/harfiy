@@ -4,6 +4,7 @@ members = [
     "crates/platform",
     "crates/tray",
     "crates/daemon",
+    "crates/ffi",
 ]
 resolver = "2"
 

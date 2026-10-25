@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Harfiy</string>
+    <string name="keyboard_name">Harfiy Klaviaturasi</string>
+    <string name="subtype_uzbek">O\'zbekcha (Harfiy)</string>
+    <string name="enable_keyboard_title">Harfiy Klaviaturasini Yoqish</string>
+    <string name="enable_keyboard_step1">1. Tizim sozlamalaridan Harfiy klaviaturasini faollashtiring.</string>
+    <string name="enable_keyboard_step2">2. Asosiy klaviatura sifatida Harfiy ni tanlang.</string>
+    <string name="btn_open_settings">Sozlamalarni Ochish</string>
+    <string name="practice_hint">Bu yerda sinab ko\'ring: shahar, choy, o\'rik, g\'isht...</string>
+</resources>
