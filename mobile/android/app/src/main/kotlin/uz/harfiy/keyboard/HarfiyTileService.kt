@@ -45,12 +45,12 @@ class HarfiyTileService : TileService() {
 
         if (isServiceActive) {
             tile.state = Tile.STATE_ACTIVE
-            tile.label = "Harfiy: Faol"
-            tile.contentDescription = "Harfiy faol (Klaviaturangiz ustida ishlamoqda)"
+            tile.label = "Harfiy: Ishlayapti"
+            tile.contentDescription = "Harfiy faol"
         } else {
             tile.state = Tile.STATE_INACTIVE
-            tile.label = "Harfiy: O'chiq"
-            tile.contentDescription = "Harfiy o'chiq"
+            tile.label = "Harfiy: O‘chiq"
+            tile.contentDescription = "Harfiy o‘chiq"
         }
         tile.updateTile()
     }
