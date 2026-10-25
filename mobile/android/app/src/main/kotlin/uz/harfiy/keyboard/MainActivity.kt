@@ -2,32 +2,60 @@ package uz.harfiy.keyboard
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
 import android.widget.*
+import java.util.Locale
 
 /**
- * Modern dashboard for configuring and testing Harfiy Accessibility Service.
+ * Modern dashboard for Harfiy on Android.
+ *
+ * Implements the full desktop tray menu capabilities:
+ * - Faol (Harfiy) toggle & system accessibility check
+ * - Matnni o'girish (Magic Batch Text Converter)
+ * - 'ng' -> 'ñ' qoidasi
+ * - O'yinlarda avtomatik pauza
+ * - Istisno dasturlar (Excluded applications manager)
+ * - Statistika (Conversions count & time saved)
+ * - Veb-sahifa, Blog, and Support links
  */
 class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
+    private var engineBridge: HarfiyEngineBridge? = null
+
+    // UI elements requiring dynamic updates
     private lateinit var statusCard: LinearLayout
     private lateinit var statusText: TextView
     private lateinit var actionBtn: Button
+    private lateinit var switchActive: Switch
+    private lateinit var statsSummaryText: TextView
+    private lateinit var statsBreakdownText: TextView
+    private lateinit var excludedSummaryText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(HarfiyAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
+
+        try {
+            engineBridge = HarfiyEngineBridge(prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false))
+        } catch (_: Exception) {
+            engineBridge = null
+        }
 
         val dp = resources.displayMetrics.density
         fun dp(v: Int): Int = (v * dp).toInt()
@@ -42,46 +70,85 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = dp(20)
+            val pad = dp(18)
             setPadding(pad, pad, pad, pad)
         }
         scrollView.addView(root)
 
-        // 1. App Header
-        val title = TextView(this).apply {
-            text = "Harfiy Yordamchisi"
+        // Helper to create modern rounded cards
+        fun createCard(): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val padCard = dp(16)
+                setPadding(padCard, padCard, padCard, padCard)
+                background = GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    cornerRadius = dp(12).toFloat()
+                    setStroke(dp(1), Color.parseColor("#E2E8F0"))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(16)
+                }
+            }
+        }
+
+        // =====================================================================
+        // 1. APP HEADER
+        // =====================================================================
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        val appTitle = TextView(this).apply {
+            text = "Harfiy"
             textSize = 26f
             setTextColor(Color.parseColor("#0F172A"))
             typeface = Typeface.DEFAULT_BOLD
         }
-        root.addView(title)
-
-        val subtitle = TextView(this).apply {
-            text = "Telefoningizning o‘z klaviaturasida (Gboard, Samsung) yozing — Harfiy fonda avtomatik to‘g‘rilaydi."
-            textSize = 14f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, dp(4), 0, dp(20))
-        }
-        root.addView(subtitle)
-
-        // 2. Status Card
-        statusCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val padCard = dp(16)
-            setPadding(padCard, padCard, padCard, padCard)
+        val versionBadge = TextView(this).apply {
+            text = "v1.0.1"
+            textSize = 12f
+            setTextColor(Color.parseColor("#2563EB"))
+            typeface = Typeface.DEFAULT_BOLD
+            val padH = dp(8)
+            val padV = dp(2)
+            setPadding(padH, padV, padH, padV)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#EFF6FF"))
+                cornerRadius = dp(6).toFloat()
+            }
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(20)
+                leftMargin = dp(8)
             }
         }
+        headerRow.addView(appTitle)
+        headerRow.addView(versionBadge)
+        root.addView(headerRow)
+
+        val appSubtitle = TextView(this).apply {
+            text = "Yangi o‘zbek lotin alifbosi yordamchisi"
+            textSize = 14f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, 0, 0, dp(16))
+        }
+        root.addView(appSubtitle)
+
+        // =====================================================================
+        // 2. MASTER STATUS CARD (Faol / Pauza / Sozlama)
+        // =====================================================================
+        statusCard = createCard()
         root.addView(statusCard)
 
         statusText = TextView(this).apply {
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_VERTICAL
         }
         statusCard.addView(statusText)
 
@@ -101,7 +168,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(12)
+                topMargin = dp(10)
             }
             setOnClickListener {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -109,48 +176,182 @@ class MainActivity : Activity() {
         }
         statusCard.addView(actionBtn)
 
-        // 3. Settings Card
-        val settingsCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val padCard = dp(16)
-            setPadding(padCard, padCard, padCard, padCard)
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE)
-                cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.parseColor("#E2E8F0"))
+        switchActive = Switch(this).apply {
+            text = "Faol (Harfiy)"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1E293B"))
+            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLED, true)
+            setOnCheckedChangeListener { _, isChecked ->
+                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLED, isChecked).apply()
+                updateStatus()
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(20)
+                topMargin = dp(8)
             }
         }
-        root.addView(settingsCard)
+        statusCard.addView(switchActive)
 
-        val settingsHeader = TextView(this).apply {
-            text = "Sozlamalar"
+        // =====================================================================
+        // 3. 🪄 MATNNI O'GIRISH (Batch Magic Text Converter)
+        // =====================================================================
+        val convertCard = createCard()
+        root.addView(convertCard)
+
+        val convertTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val magicIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_menu_magic)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply {
+                rightMargin = dp(8)
+            }
+        }
+        val convertTitle = TextView(this).apply {
+            text = "Matnni o'girish"
             textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#1E293B"))
-            setPadding(0, 0, 0, dp(12))
+        }
+        convertTitleRow.addView(magicIcon)
+        convertTitleRow.addView(convertTitle)
+        convertCard.addView(convertTitleRow)
+
+        val convertSubtitle = TextView(this).apply {
+            text = "Istalgan matnni bir zumda yangi o‘zbek lotin imlosiga o‘giring:"
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, dp(4), 0, dp(10))
+        }
+        convertCard.addView(convertSubtitle)
+
+        val convertInput = EditText(this).apply {
+            hint = "Matnni bu yerga qo'ying yoki yozing..."
+            textSize = 15f
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            minLines = 3
+            gravity = Gravity.TOP or Gravity.START
+            val padField = dp(10)
+            setPadding(padField, padField, padField, padField)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(8).toFloat()
+            }
+        }
+        convertCard.addView(convertInput)
+
+        val convertBtnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(10)
+            }
+        }
+
+        val btnDoConvert = Button(this).apply {
+            text = "🪄 O'girish"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2563EB"))
+                cornerRadius = dp(8).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+                rightMargin = dp(6)
+            }
+            setOnClickListener {
+                val input = convertInput.text.toString()
+                if (input.isNotEmpty()) {
+                    val enableNg = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
+                    val converted = if (engineBridge != null) {
+                        engineBridge!!.convertText(input, smartApostrophe = true)
+                    } else {
+                        fallbackConvertText(input, enableNg)
+                    }
+                    convertInput.setText(converted)
+                    convertInput.setSelection(converted.length)
+                    Toast.makeText(this@MainActivity, "Matn muvaffaqiyatli o'girildi!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        convertBtnRow.addView(btnDoConvert)
+
+        val btnCopy = Button(this).apply {
+            text = "📋 Nusxa olish"
+            textSize = 13f
+            setTextColor(Color.parseColor("#1E293B"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#E2E8F0"))
+                cornerRadius = dp(8).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+                rightMargin = dp(6)
+            }
+            setOnClickListener {
+                val textToCopy = convertInput.text.toString()
+                if (textToCopy.isNotEmpty()) {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Harfiy", textToCopy))
+                    Toast.makeText(this@MainActivity, "Nusxalandi!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        convertBtnRow.addView(btnCopy)
+
+        val btnClear = Button(this).apply {
+            text = "Tozalash"
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(8).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.9f)
+            setOnClickListener {
+                convertInput.setText("")
+            }
+        }
+        convertBtnRow.addView(btnClear)
+        convertCard.addView(convertBtnRow)
+
+        // =====================================================================
+        // 4. SOZLAMALAR (Rules & Options)
+        // =====================================================================
+        val settingsCard = createCard()
+        root.addView(settingsCard)
+
+        val settingsHeader = TextView(this).apply {
+            text = "Qoidalar va sozlamalar"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1E293B"))
+            setPadding(0, 0, 0, dp(8))
         }
         settingsCard.addView(settingsHeader)
 
-        // Switch: Enable Harfiy
-        val switchEnabled = Switch(this).apply {
-            text = "Harfiy almashtirishini yoqish"
+        // Switch: 'ng' -> 'ñ'
+        val switchNg = Switch(this).apply {
+            text = "'ng' -> 'ñ' qoidasi"
             textSize = 15f
             setTextColor(Color.parseColor("#334155"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLED, true)
+            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
             setOnCheckedChangeListener { _, isChecked ->
-                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLED, isChecked).apply()
+                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, isChecked).apply()
+                engineBridge?.setEnableNg(isChecked)
             }
             setPadding(0, dp(6), 0, dp(6))
         }
-        settingsCard.addView(switchEnabled)
+        settingsCard.addView(switchNg)
 
-        // Switch: Enable Instant Undo
+        // Switch: Instant Undo
         val switchUndo = Switch(this).apply {
             text = "Instant Undo (Backspace bilan qaytarish)"
             textSize = 15f
@@ -163,36 +364,134 @@ class MainActivity : Activity() {
         }
         settingsCard.addView(switchUndo)
 
-        // Switch: Enable 'ng'
-        val switchNg = Switch(this).apply {
-            text = "\"ng\" qoidasi (ng -> ñ)"
+        // Switch: O'yinlarda avtomatik pauza
+        val switchGame = Switch(this).apply {
+            text = "O'yinlarda avtomatik pauza"
             textSize = 15f
             setTextColor(Color.parseColor("#334155"))
-            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
+            isChecked = prefs.getBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, true)
             setOnCheckedChangeListener { _, isChecked ->
-                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, isChecked).apply()
+                prefs.edit().putBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, isChecked).apply()
             }
             setPadding(0, dp(6), 0, dp(6))
         }
-        settingsCard.addView(switchNg)
+        settingsCard.addView(switchGame)
 
-        // 4. Test Field Card
-        val testCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val padCard = dp(16)
-            setPadding(padCard, padCard, padCard, padCard)
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE)
-                cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.parseColor("#E2E8F0"))
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(20)
+        // =====================================================================
+        // 5. ISTISNO DASTURLAR (Excluded Apps)
+        // =====================================================================
+        val excludedCard = createCard()
+        root.addView(excludedCard)
+
+        val excludedRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val folderIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_menu_web)
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                rightMargin = dp(8)
             }
         }
+        val excludedTitle = TextView(this).apply {
+            text = "Istisno dasturlar"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1E293B"))
+        }
+        excludedRow.addView(folderIcon)
+        excludedRow.addView(excludedTitle)
+        excludedCard.addView(excludedRow)
+
+        excludedSummaryText = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        excludedCard.addView(excludedSummaryText)
+
+        val btnManageExcluded = Button(this).apply {
+            text = "Dasturlar ro'yxatini boshqarish"
+            textSize = 14f
+            setTextColor(Color.parseColor("#1E293B"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(8).toFloat()
+            }
+            setOnClickListener {
+                showExcludedAppsDialog()
+            }
+        }
+        excludedCard.addView(btnManageExcluded)
+
+        // =====================================================================
+        // 6. STATISTIKA (Statistics)
+        // =====================================================================
+        val statsCard = createCard()
+        root.addView(statsCard)
+
+        val statsTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val statsIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_menu_stats)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply {
+                rightMargin = dp(8)
+            }
+        }
+        val statsTitle = TextView(this).apply {
+            text = "Statistika"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1E293B"))
+        }
+        statsTitleRow.addView(statsIcon)
+        statsTitleRow.addView(statsTitle)
+        statsCard.addView(statsTitleRow)
+
+        statsSummaryText = TextView(this).apply {
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#0F172A"))
+            setPadding(0, dp(6), 0, dp(2))
+        }
+        statsCard.addView(statsSummaryText)
+
+        statsBreakdownText = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, 0, 0, dp(10))
+        }
+        statsCard.addView(statsBreakdownText)
+
+        val btnClearStats = Button(this).apply {
+            text = "Statistikani tozalash"
+            textSize = 13f
+            setTextColor(Color.parseColor("#EF4444"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FEF2F2"))
+                cornerRadius = dp(8).toFloat()
+            }
+            setOnClickListener {
+                prefs.edit()
+                    .remove(HarfiyAccessibilityService.KEY_STATS_TOTAL)
+                    .remove(HarfiyAccessibilityService.KEY_STATS_SH)
+                    .remove(HarfiyAccessibilityService.KEY_STATS_CH)
+                    .remove(HarfiyAccessibilityService.KEY_STATS_O)
+                    .remove(HarfiyAccessibilityService.KEY_STATS_G)
+                    .remove(HarfiyAccessibilityService.KEY_STATS_NG)
+                    .apply()
+                updateStats()
+                Toast.makeText(this@MainActivity, "Statistika tozalandi", Toast.LENGTH_SHORT).show()
+            }
+        }
+        statsCard.addView(btnClearStats)
+
+        // =====================================================================
+        // 7. SINAB KO'RISH MAYDONI (Interactive Playground)
+        // =====================================================================
+        val testCard = createCard()
         root.addView(testCard)
 
         val testTitle = TextView(this).apply {
@@ -204,10 +503,10 @@ class MainActivity : Activity() {
         testCard.addView(testTitle)
 
         val testDesc = TextView(this).apply {
-            text = "Telefoningiz klaviaturasida shahar, choy, o'rik, g'isht deb yozing:"
+            text = "Telefoningiz klaviaturasida yozib ko‘ring (shahar, choy, o'rik, g'isht):"
             textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, dp(4), 0, dp(12))
+            setPadding(0, dp(4), 0, dp(10))
         }
         testCard.addView(testDesc)
 
@@ -225,19 +524,63 @@ class MainActivity : Activity() {
         }
         testCard.addView(practiceField)
 
-        // 5. Info Box
-        val infoBox = TextView(this).apply {
-            text = "💡 Eslatma: Harfiy hech qanday g‘alati yoki yangi klaviatura ochmaydi. Gboard yoki Samsung klaviaturangizda odatdagidek yozaverasiz, Harfiy esa fonda harflarni avtomatik to‘g‘rilab beradi."
-            textSize = 13f
-            setTextColor(Color.parseColor("#475569"))
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F8FAFC"))
-                cornerRadius = dp(10).toFloat()
-                setStroke(dp(1), Color.parseColor("#CBD5E1"))
+        // =====================================================================
+        // 8. HAVOLALAR (Web, Blog, Support)
+        // =====================================================================
+        val linksCard = createCard()
+        root.addView(linksCard)
+
+        val linksTitle = TextView(this).apply {
+            text = "Loyiha haqida"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#1E293B"))
+            setPadding(0, 0, 0, dp(8))
+        }
+        linksCard.addView(linksTitle)
+
+        fun createLinkRow(iconRes: Int, label: String, url: String): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val padRow = dp(10)
+                setPadding(padRow, padRow, padRow, padRow)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#F8FAFC"))
+                    cornerRadius = dp(8).toFloat()
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(6)
+                }
+                setOnClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (_: Exception) {
+                        Toast.makeText(this@MainActivity, "Havolani ochib bo'lmadi", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                val icon = ImageView(context).apply {
+                    setImageResource(iconRes)
+                    layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply {
+                        rightMargin = dp(10)
+                    }
+                }
+                val text = TextView(context).apply {
+                    text = label
+                    textSize = 15f
+                    setTextColor(Color.parseColor("#1E293B"))
+                }
+                addView(icon)
+                addView(text)
             }
         }
-        root.addView(infoBox)
+
+        linksCard.addView(createLinkRow(R.drawable.ic_menu_web, "Veb-sahifa", "https://abdumannon-shamsiyev.uz/harfiy"))
+        linksCard.addView(createLinkRow(R.drawable.ic_menu_blog, "Blog (@abdumannon_notes)", "https://t.me/abdumannon_notes"))
+        linksCard.addView(createLinkRow(R.drawable.ic_menu_support, "Support (@abdumannon_shamsiyev)", "https://t.me/abdumannon_shamsiyev"))
 
         setContentView(scrollView)
     }
@@ -245,33 +588,108 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         updateStatus()
+        updateStats()
+        updateExcludedAppsSummary()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        engineBridge?.close()
+        engineBridge = null
     }
 
     private fun updateStatus() {
         val isServiceEnabled = isAccessibilityServiceEnabled()
+        val isHarfiyActive = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLED, true)
         val dp = resources.displayMetrics.density
 
-        if (isServiceEnabled) {
-            statusCard.background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F0FDF4"))
-                cornerRadius = 12 * dp
-                setStroke((1.5f * dp).toInt(), Color.parseColor("#86EFAC"))
-            }
-            statusText.text = "✅ Harfiy faol (Default klaviatura ustida ishlayapti)"
-            statusText.setTextColor(Color.parseColor("#166534"))
-            actionBtn.text = "Sozlamalarni ko‘rish"
-            (actionBtn.background as? GradientDrawable)?.setColor(Color.parseColor("#15803D"))
-        } else {
+        switchActive.isChecked = isHarfiyActive
+
+        if (!isServiceEnabled) {
             statusCard.background = GradientDrawable().apply {
                 setColor(Color.parseColor("#FEF2F2"))
                 cornerRadius = 12 * dp
                 setStroke((1.5f * dp).toInt(), Color.parseColor("#FECACA"))
             }
-            statusText.text = "⚠️ Harfiy o‘chiq (Maxsus imkoniyat yoqilmagan)"
+            statusText.text = "⚠️ Maxsus imkoniyat yoqilmagan"
             statusText.setTextColor(Color.parseColor("#991B1B"))
-            actionBtn.text = "Harfiy'ni yoqish (Sozlamalarga o‘tish)"
+            actionBtn.visibility = Button.VISIBLE
+            actionBtn.text = "Sozlamalardan Harfiy'ni yoqish"
             (actionBtn.background as? GradientDrawable)?.setColor(Color.parseColor("#DC2626"))
+        } else if (!isHarfiyActive) {
+            statusCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FFFBEB"))
+                cornerRadius = 12 * dp
+                setStroke((1.5f * dp).toInt(), Color.parseColor("#FDE68A"))
+            }
+            statusText.text = "⏸️ Harfiy pauza qilingan (Vaqtincha o'chiq)"
+            statusText.setTextColor(Color.parseColor("#92400E"))
+            actionBtn.visibility = Button.GONE
+        } else {
+            statusCard.background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F0FDF4"))
+                cornerRadius = 12 * dp
+                setStroke((1.5f * dp).toInt(), Color.parseColor("#86EFAC"))
+            }
+            statusText.text = "✅ Faol (Harfiy tizim klaviaturasida ishlamoqda)"
+            statusText.setTextColor(Color.parseColor("#166534"))
+            actionBtn.visibility = Button.GONE
         }
+    }
+
+    private fun updateStats() {
+        val total = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_TOTAL, 0L)
+        val sh = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_SH, 0L)
+        val ch = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_CH, 0L)
+        val o = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_O, 0L)
+        val g = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_G, 0L)
+        val ng = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_NG, 0L)
+
+        // Time saved calculation: (total * 0.8s) / 60
+        val minutesSaved = String.format(Locale.US, "%.1f", (total * 0.8) / 60.0)
+
+        statsSummaryText.text = "Jami: $total ta o'zgartirish (~$minutesSaved daqiqa tejaldi)"
+        statsBreakdownText.text = "ş: $sh  |  ç: $ch  |  ö: $o  |  ğ: $g  |  ñ: $ng"
+    }
+
+    private fun updateExcludedAppsSummary() {
+        val excluded = prefs.getStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, emptySet()) ?: emptySet()
+        excludedSummaryText.text = if (excluded.isEmpty()) {
+            "Hozirda istisnolar yo'q (barcha ilovalarda ishlaydi)"
+        } else {
+            "${excluded.size} ta dasturda Harfiy o'chirilgan"
+        }
+    }
+
+    private fun showExcludedAppsDialog() {
+        val currentExcluded = prefs.getStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, HashSet())?.toMutableSet()
+            ?: mutableSetOf()
+
+        val pm = packageManager
+        val installedApps = pm.getInstalledApplications(0)
+            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName == "com.google.android.apps.messaging" }
+            .sortedBy { pm.getApplicationLabel(it).toString() }
+
+        val appNames = installedApps.map { pm.getApplicationLabel(it).toString() }.toTypedArray()
+        val checkedItems = installedApps.map { currentExcluded.contains(it.packageName) }.toBooleanArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Istisno dasturlar")
+            .setMultiChoiceItems(appNames, checkedItems) { _, which, isChecked ->
+                val pkg = installedApps[which].packageName
+                if (isChecked) {
+                    currentExcluded.add(pkg)
+                } else {
+                    currentExcluded.remove(pkg)
+                }
+            }
+            .setPositiveButton("Saqlash") { _, _ ->
+                prefs.edit().putStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, currentExcluded).apply()
+                updateExcludedAppsSummary()
+                Toast.makeText(this, "Istisnolar saqlandi", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Bekor qilish", null)
+            .show()
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -281,5 +699,23 @@ class MainActivity : Activity() {
             it.resolveInfo.serviceInfo.packageName == packageName &&
             it.resolveInfo.serviceInfo.name.contains("HarfiyAccessibilityService")
         }
+    }
+
+    private fun fallbackConvertText(input: String, enableNg: Boolean): String {
+        var res = input
+        // sh -> ş
+        res = res.replace("sh", "ş").replace("Sh", "Ş").replace("SH", "Ş")
+        // ch -> ç
+        res = res.replace("ch", "ç").replace("Ch", "Ç").replace("CH", "Ç")
+        // o' -> ö
+        val apos = charArrayOf('\'', '`', '‘', '’', 'ʻ', 'ʼ', '´')
+        for (a in apos) {
+            res = res.replace("o$a", "ö").replace("O$a", "Ö")
+            res = res.replace("g$a", "ğ").replace("G$a", "Ğ")
+        }
+        if (enableNg) {
+            res = res.replace("ng", "ñ").replace("Ng", "Ñ").replace("NG", "Ñ")
+        }
+        return res
     }
 }

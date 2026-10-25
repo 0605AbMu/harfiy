@@ -3,6 +3,7 @@ package uz.harfiy.keyboard
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -19,8 +20,11 @@ import android.view.accessibility.AccessibilityNodeInfo
  * Automatically converts Uzbek phonetic pairs in real time:
  *   sh -> ş, ch -> ç, o' -> ö, g' -> ğ (and optionally ng -> ñ)
  *
- * Supports Harfiy's signature Instant Undo: pressing Backspace immediately after
- * conversion restores the exact pre-conversion text without leaking hints/placeholders.
+ * Supports:
+ * - Instant Undo: pressing Backspace immediately restores the original two characters.
+ * - Excluded Apps: ignores user-specified applications.
+ * - Game Mode Auto-Pause: automatically suspends in games and full-screen gaming apps.
+ * - Statistics: tracks conversions and saved time.
  */
 class HarfiyAccessibilityService : AccessibilityService() {
 
@@ -29,6 +33,16 @@ class HarfiyAccessibilityService : AccessibilityService() {
         const val KEY_ENABLED = "harfiy_enabled"
         const val KEY_ENABLE_NG = "harfiy_enable_ng"
         const val KEY_INSTANT_UNDO = "harfiy_instant_undo"
+        const val KEY_GAME_PAUSE = "harfiy_game_pause"
+        const val KEY_EXCLUDED_APPS = "harfiy_excluded_apps"
+
+        // Stats keys
+        const val KEY_STATS_TOTAL = "stats_total"
+        const val KEY_STATS_SH = "stats_sh"
+        const val KEY_STATS_CH = "stats_ch"
+        const val KEY_STATS_O = "stats_o"
+        const val KEY_STATS_G = "stats_g"
+        const val KEY_STATS_NG = "stats_ng"
 
         private val APOSTROPHES = charArrayOf('\'', '`', '‘', '’', 'ʻ', 'ʼ', '´')
 
@@ -62,6 +76,18 @@ class HarfiyAccessibilityService : AccessibilityService() {
         if (event == null) return
         if (!prefs.getBoolean(KEY_ENABLED, true)) return
 
+        // 1. Excluded apps check
+        val pkgName = event.packageName?.toString() ?: ""
+        val excludedApps = prefs.getStringSet(KEY_EXCLUDED_APPS, emptySet()) ?: emptySet()
+        if (pkgName.isNotEmpty() && excludedApps.contains(pkgName)) {
+            return
+        }
+
+        // 2. Game mode auto-pause check
+        if (prefs.getBoolean(KEY_GAME_PAUSE, true) && isGamePackage(pkgName)) {
+            return
+        }
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 handleTextChanged(event)
@@ -70,6 +96,20 @@ class HarfiyAccessibilityService : AccessibilityService() {
                 // Focus shifted to another input field - reset undo state
                 lastUndo = null
             }
+        }
+    }
+
+    private fun isGamePackage(pkg: String): Boolean {
+        if (pkg.isEmpty()) return false
+        return try {
+            val appInfo = packageManager.getApplicationInfo(pkg, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appInfo.category == ApplicationInfo.CATEGORY_GAME
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -107,8 +147,7 @@ class HarfiyAccessibilityService : AccessibilityService() {
         val undo = lastUndo
         if (instantUndoEnabled && undo != null && addedCount == 0 && removedCount == 1) {
             if (fromIndex == undo.replacementIndex) {
-                // The user just deleted our replacement character.
-                // Restore the exact pre-replacement string (never touches the hint/placeholder).
+                // Restore the exact pre-replacement string (never touches the hint/placeholder)
                 applyTextChange(source, undo.restoredFullText, undo.restoredCursor)
                 lastUndo = null
                 return
@@ -128,7 +167,9 @@ class HarfiyAccessibilityService : AccessibilityService() {
         val currChar = currentText[insertEnd - 1]
 
         val enableNg = prefs.getBoolean(KEY_ENABLE_NG, false)
-        val replacement = matchRule(prevChar, currChar, enableNg) ?: return
+        val match = matchRule(prevChar, currChar, enableNg) ?: return
+
+        val replacement = match.replacement
 
         // Perform replacement of the 2-character trigger
         val prefix = currentText.substring(0, insertEnd - 2)
@@ -136,7 +177,7 @@ class HarfiyAccessibilityService : AccessibilityService() {
         val newText = prefix + replacement + suffix
         val newCursor = prefix.length + replacement.length
 
-        // Save pristine full text for instant undo (independent of future node hint states)
+        // Save pristine full text for instant undo
         val originalPair = "$prevChar$currChar"
         val restoredFullText = prefix + originalPair + suffix
         val restoredCursor = prefix.length + originalPair.length
@@ -149,32 +190,44 @@ class HarfiyAccessibilityService : AccessibilityService() {
         )
 
         applyTextChange(source, newText, newCursor)
+        recordStat(match.statKey)
     }
 
-    private fun matchRule(prev: Char, curr: Char, enableNg: Boolean): String? {
+    private data class RuleMatch(val replacement: String, val statKey: String)
+
+    private fun matchRule(prev: Char, curr: Char, enableNg: Boolean): RuleMatch? {
         return when {
             // sh -> ş
-            prev == 's' && (curr == 'h' || curr == 'H') -> "ş"
-            prev == 'S' && (curr == 'h' || curr == 'H') -> "Ş"
+            prev == 's' && (curr == 'h' || curr == 'H') -> RuleMatch("ş", KEY_STATS_SH)
+            prev == 'S' && (curr == 'h' || curr == 'H') -> RuleMatch("Ş", KEY_STATS_SH)
 
             // ch -> ç
-            prev == 'c' && (curr == 'h' || curr == 'H') -> "ç"
-            prev == 'C' && (curr == 'h' || curr == 'H') -> "Ç"
+            prev == 'c' && (curr == 'h' || curr == 'H') -> RuleMatch("ç", KEY_STATS_CH)
+            prev == 'C' && (curr == 'h' || curr == 'H') -> RuleMatch("Ç", KEY_STATS_CH)
 
             // o' -> ö
-            prev == 'o' && isApostrophe(curr) -> "ö"
-            prev == 'O' && isApostrophe(curr) -> "Ö"
+            prev == 'o' && isApostrophe(curr) -> RuleMatch("ö", KEY_STATS_O)
+            prev == 'O' && isApostrophe(curr) -> RuleMatch("Ö", KEY_STATS_O)
 
             // g' -> ğ
-            prev == 'g' && isApostrophe(curr) -> "ğ"
-            prev == 'G' && isApostrophe(curr) -> "Ğ"
+            prev == 'g' && isApostrophe(curr) -> RuleMatch("ğ", KEY_STATS_G)
+            prev == 'G' && isApostrophe(curr) -> RuleMatch("Ğ", KEY_STATS_G)
 
             // ng -> ñ
-            enableNg && prev == 'n' && (curr == 'g' || curr == 'G') -> "ñ"
-            enableNg && prev == 'N' && (curr == 'g' || curr == 'G') -> "Ñ"
+            enableNg && prev == 'n' && (curr == 'g' || curr == 'G') -> RuleMatch("ñ", KEY_STATS_NG)
+            enableNg && prev == 'N' && (curr == 'g' || curr == 'G') -> RuleMatch("Ñ", KEY_STATS_NG)
 
             else -> null
         }
+    }
+
+    private fun recordStat(statKey: String) {
+        val total = prefs.getLong(KEY_STATS_TOTAL, 0L) + 1
+        val typeCount = prefs.getLong(statKey, 0L) + 1
+        prefs.edit()
+            .putLong(KEY_STATS_TOTAL, total)
+            .putLong(statKey, typeCount)
+            .apply()
     }
 
     private fun applyTextChange(source: AccessibilityNodeInfo, newText: String, newCursor: Int) {
