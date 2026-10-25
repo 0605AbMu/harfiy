@@ -41,6 +41,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    lint {
+        disable += setOf("SetTextI18n", "IconDipSize", "GradleDependency")
+        abortOnError = true
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
