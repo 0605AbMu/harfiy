@@ -46,7 +46,7 @@
         <!-- Quick Settings Tile for 1-Tap Toggle from Notification Shade -->
         <service
             android:name=".HarfiyTileService"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@drawable/ic_tile_harfiy"
             android:label="Harfiy"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">

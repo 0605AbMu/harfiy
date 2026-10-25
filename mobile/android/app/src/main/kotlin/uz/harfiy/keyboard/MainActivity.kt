@@ -1000,7 +1000,7 @@ class MainActivity : Activity() {
             statusBarManager.requestAddTileService(
                 ComponentName(this, HarfiyTileService::class.java),
                 "Harfiy",
-                Icon.createWithResource(this, R.mipmap.ic_launcher),
+                Icon.createWithResource(this, R.drawable.ic_tile_harfiy),
                 mainExecutor
             ) { result ->
                 when (result) {

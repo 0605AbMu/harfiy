@@ -63,8 +63,8 @@ class HarfiyTileService : TileService() {
         val prefs = getSharedPreferences(HarfiyAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
         val isPaused = prefs.getBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, false)
 
-        // Use the official Harfiy App Icon for the Quick Settings tile
-        tile.icon = android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher)
+        // Use the official Harfiy Brand Logo with transparent background (properly tinted by Android)
+        tile.icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_tile_harfiy)
 
         if (isServiceActive && !isPaused) {
             tile.state = Tile.STATE_ACTIVE

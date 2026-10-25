@@ -525,7 +525,7 @@ class SetupWizardDialog(
             statusBarManager.requestAddTileService(
                 ComponentName(activity, HarfiyTileService::class.java),
                 "Harfiy",
-                Icon.createWithResource(activity, R.mipmap.ic_launcher),
+                Icon.createWithResource(activity, R.drawable.ic_tile_harfiy),
                 activity.mainExecutor
             ) { _ ->
                 hasTileAdded = true
