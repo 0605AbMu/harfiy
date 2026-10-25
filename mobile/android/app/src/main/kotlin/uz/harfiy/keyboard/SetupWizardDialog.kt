@@ -60,6 +60,7 @@ class SetupWizardDialog(
     private var liveTestSuccessLabel: TextView? = null
     private var finishButton: Button? = null
     private var hasTypingTested = false
+    private var stepBadge: TextView? = null
 
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
@@ -124,19 +125,21 @@ class SetupWizardDialog(
         }
         topBar.addView(dotsContainer)
 
-        val closeBtn = TextView(context).apply {
-            text = "✕"
-            textSize = 18f
-            setTextColor(Color.parseColor("#94A3B8"))
-            setPadding(dp(8), dp(4), dp(4), dp(4))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                dismiss()
-                onFinished()
+        val badge = TextView(context).apply {
+            text = "1 / $totalSteps"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#2563EB"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#EFF6FF"))
+                cornerRadius = dp(8).toFloat()
             }
+            val padH = dp(8)
+            val padV = dp(3)
+            setPadding(padH, padV, padH, padV)
         }
-        topBar.addView(closeBtn)
+        stepBadge = badge
+        topBar.addView(badge)
         rootCard.addView(topBar)
 
         // Scrollable Content Area
@@ -180,7 +183,17 @@ class SetupWizardDialog(
         checkHandler.removeCallbacksAndMessages(null)
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (currentStep > 1) {
+            renderStep(currentStep - 1)
+        } else {
+            Toast.makeText(context, "Harfiy to‘liq ishlashi uchun barcha bosqichlarni yakunlash shart", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun updateDots(step: Int) {
+        stepBadge?.text = "$step / $totalSteps"
         val dp = activity.resources.displayMetrics.density
         for (i in 0 until totalSteps) {
             val dot = stepDots[i]
@@ -456,7 +469,7 @@ class SetupWizardDialog(
         contentContainer.addView(iconBadge)
 
         val title = TextView(context).apply {
-            text = "2-vazifa: Tezkor menyuga qo‘shish"
+            text = "2-vazifa: Tezkor boshqarish tugmasi"
             textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
@@ -533,7 +546,7 @@ class SetupWizardDialog(
         contentContainer.addView(tileStatusPill)
 
         // Action button to add tile
-        val addTileBtn = createPrimaryButton("⚡ Tezkor menyuga qo‘shish") {
+        val addTileBtn = createPrimaryButton("⚡ Tezkor boshqarish tugmasini qo‘shish") {
             performAddTileAction()
         }
         contentContainer.addView(addTileBtn)
@@ -541,7 +554,7 @@ class SetupWizardDialog(
         // Next button (DISABLED until tile action is performed!)
         tileNextBtn = createPrimaryButton("Ajoyib, keyingi qadam ›") {
             if (!hasTileAdded) {
-                Toast.makeText(activity, "Iltimos, avval «Tezkor menyuga qo‘shish» tugmasini bosing!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Iltimos, avval «Tezkor boshqarish tugmasini qo‘shish» tugmasini bosing!", Toast.LENGTH_SHORT).show()
                 return@createPrimaryButton
             }
             renderStep(4)
@@ -570,7 +583,7 @@ class SetupWizardDialog(
             unlockTileNextStep()
         } else {
             AlertDialog.Builder(activity)
-                .setTitle("Tezkor menyuga qo‘shish")
+                .setTitle("Tezkor boshqarish tugmasi")
                 .setMessage("1️⃣  Telefoningizning tepasini 2 marta pastga torting\n2️⃣  Tahrirlash (Qalamcha) belgisini bosing\n3️⃣  «Harfiy» tugmasini yuqoriga surib qo‘ying.")
                 .setPositiveButton("Bajarildi") { _, _ ->
                     hasTileAdded = true
@@ -582,7 +595,7 @@ class SetupWizardDialog(
 
     private fun unlockTileNextStep() {
         tileStatusPill?.apply {
-            text = "🟢 TEZKOR MENYUGA QO‘SHILDI!"
+            text = "🟢 TEZKOR BOSHQARISH TUGMASI QO‘SHILDI!"
             setTextColor(Color.parseColor("#047857"))
             (background as GradientDrawable).setColor(Color.parseColor("#D1FAE5"))
         }

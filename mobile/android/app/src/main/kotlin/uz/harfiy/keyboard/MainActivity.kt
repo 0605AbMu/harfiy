@@ -656,13 +656,13 @@ class MainActivity : Activity() {
                 rightMargin = dp(8)
             }
             val t = TextView(context).apply {
-                text = "Tezkor parda tugmasi (ixtiyoriy)"
+                text = "Tezkor boshqarish tugmasi (ixtiyoriy)"
                 textSize = 15f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.parseColor("#0F172A"))
             }
             val s = TextView(context).apply {
-                text = "Telefon pardasidan to‘xtatishni xohlovchilar uchun"
+                text = "Yuqori tezkor paneldan to‘xtatishni xohlovchilar uchun"
                 textSize = 12f
                 setTextColor(Color.parseColor("#64748B"))
                 setPadding(0, dp(1), 0, 0)
@@ -721,7 +721,7 @@ class MainActivity : Activity() {
                 setTextColor(Color.parseColor("#0F172A"))
             }
             val s = TextView(context).apply {
-                text = "Harfiy va parda tugmasini ishlatish qo‘llanmasi"
+                text = "Harfiy va tezkor boshqarish tugmasini ishlatish qo‘llanmasi"
                 textSize = 12f
                 setTextColor(Color.parseColor("#64748B"))
                 setPadding(0, dp(1), 0, 0)
@@ -1045,8 +1045,8 @@ class MainActivity : Activity() {
             }
         } else {
             AlertDialog.Builder(this)
-                .setTitle("Tezkor sozlamalar menyusi")
-                .setMessage("Harfiyni yuqori pardadan 1 marta bosishda yoqish yoki to‘xtatish uchun:\n\n1. Ekranning yuqori qismidan 2 marta pastga torting\n2. Qalamcha (Tahrirlash) belgisini bosing\n3. 'Harfiy' tugmasini faol tugmalar qatoriga surib qo‘ying.")
+                .setTitle("Tezkor boshqarish tugmasi")
+                .setMessage("Harfiyni yuqori tezkor paneldan 1 marta bosishda yoqish yoki to‘xtatish uchun:\n\n1. Ekranning yuqori qismidan 2 marta pastga torting\n2. Qalamcha (Tahrirlash) belgisini bosing\n3. 'Harfiy' tugmasini faol tugmalar qatoriga surib qo‘ying.")
                 .setPositiveButton("Tushunarli", null)
                 .show()
         }

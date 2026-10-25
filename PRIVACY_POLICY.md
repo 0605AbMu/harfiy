@@ -41,7 +41,7 @@ Harfiy barcha yoshdagi foydalanuvchilar, jumladan bolalar uchun ham mutlaqo xavf
 ### 6. Xizmatni O‘chirish va Olib Tashlash
 Foydalanuvchi istalgan vaqtda:
 1. Ilova ichidagi bosh kalit orqali;
-2. Yuqori parda menyusidagi tezkor «Harfiy» tugmasi orqali;
+2. Yuqori tezkor boshqarish panelidagi «Harfiy» tugmasi orqali;
 3. Telefonning `Sozlamalar -> Maxsus imkoniyatlar` bo‘limidan Harfiy xizmatini vaqtincha yoki butunlay to‘xtatishi yoxud ilovani butunlay o‘chirib tashlashi mumkin.
 
 ---
