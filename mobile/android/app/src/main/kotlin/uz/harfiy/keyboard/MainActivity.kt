@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -611,9 +612,32 @@ class MainActivity : Activity() {
     }
 
     private fun openAccessibilitySettings() {
-        Toast.makeText(this, "Ro‘yxatdan 'Harfiy'ni tanlang va yoqing", Toast.LENGTH_LONG).show()
+        val serviceComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name).flattenToString()
+
+        // 1. Try deep-linking directly to Harfiy's specific service toggle screen
+        val deepLinkIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(":settings:fragment_args_key", serviceComponent)
+            val bundle = Bundle().apply {
+                putString(":settings:fragment_args_key", serviceComponent)
+            }
+            putExtra(":settings:show_fragment_args", bundle)
+        }
+
         try {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            startActivity(deepLinkIntent)
+            Toast.makeText(this, "Harfiy'ni yoqish uchun bitta switchni bosing", Toast.LENGTH_SHORT).show()
+            return
+        } catch (_: Exception) {
+            // Fallback for custom ROMs that disallow direct fragment arguments
+        }
+
+        // 2. Standard accessibility settings fallback
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            Toast.makeText(this, "Ro‘yxatdan 'Harfiy'ni tanlang va yoqing", Toast.LENGTH_LONG).show()
         } catch (_: Exception) {
             startActivity(Intent(Settings.ACTION_SETTINGS))
         }
