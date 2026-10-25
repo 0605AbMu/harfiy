@@ -1,6 +1,6 @@
-# Harfiy Mobile: iOS va Android Klaviaturasi
+# Harfiy Mobile: iOS va Android Yordamchisi
 
-Ushbu katalog **Harfiy** avto-konvertatsiya tizimining **iOS** (Apple Keyboard Extension) va **Android** (InputMethodService) platformalari uchun ishlab chiqilgan mobil loyihalarini o'z ichiga oladi.
+Ushbu katalog **Harfiy** avto-konvertatsiya tizimining **iOS** (Apple Keyboard Extension) va **Android** (AccessibilityService - tizim klaviaturasi ustida ishlash) platformalari uchun ishlab chiqilgan mobil loyihalarini o'z ichiga oladi.
 
 ---
 
@@ -19,9 +19,9 @@ mobile/
     ├── app/
     │   ├── src/main/jniLibs/  # .so kutubxonalari (avtomatik yaratiladi)
     │   └── src/main/kotlin/uz/harfiy/keyboard/
-    │       ├── HarfiyEngineBridge.kt       # JNI Bridge
-    │       ├── HarfiyInputMethodService.kt # Klaviatura xizmati
-    │       └── MainActivity.kt             # Faollashtirish ustasi
+    │       ├── HarfiyEngineBridge.kt          # JNI Bridge
+    │       ├── HarfiyAccessibilityService.kt  # Tizim klaviaturasi (Gboard, Samsung) ustida ishlovchi xizmat
+    │       └── MainActivity.kt                # Boshqaruv paneli va sinov maydoni
 ```
 
 ---
@@ -43,7 +43,9 @@ Ushbu skript `aarch64-apple-ios` va `aarch64-apple-ios-sim` targetlarida `harfiy
 
 ---
 
-## 🤖 2. Android Klaviaturasini Yig'ish va Sinash
+## 🤖 2. Android Yordamchisini Yig'ish va Sinash
+
+Android'da Harfiy hech qanday qo'shimcha yoki noqulay klaviatura talab qilmaydi. Siz har doimgidek o'zingizning sevimli tizim klaviaturangizda (**Gboard**, **Samsung Keyboard**, **SwiftKey**) yozasiz. Harfiy `AccessibilityService` orqali fonda harflarni avtomatik to'g'rilab beradi!
 
 ### 1-qadam: Android JNI kutubxonalarini yig'ish
 ```bash
@@ -51,10 +53,14 @@ Ushbu skript `aarch64-apple-ios` va `aarch64-apple-ios-sim` targetlarida `harfiy
 ```
 Ushbu skript `cargo-ndk` orqali `arm64-v8a`, `armeabi-v7a` va `x86_64` uchun `libharfiy_ffi.so` fayllarini `mobile/android/app/src/main/jniLibs` ga joylaydi.
 
-### 2-qadam: Android Studio'da ochish
+### 2-qadam: Android Studio'da ochish va telefonga o'rnatish
 1. Android Studio orqali `mobile/android` papkasini oching (*Open existing project*).
-2. Telefoningizni USB orqali ulab, **Run (Shift + F10)** tugmasini bosing.
-3. Ilova ochilgach, **«Sozlamalardan Klaviaturani Yoqish»** tugmasini bosing va Harfiy'ni faollashtiring.
+2. Telefoningizni USB orqali ulab, **Run (Shift + F10)** tugmasini bosing yoki terminalda:
+   ```bash
+   cd mobile/android && ./gradlew installDebug
+   ```
+3. Ilova ochilgach, **«Sozlamalardan Harfiy'ni yoqish»** tugmasini bosing va Maxsus imkoniyatlar (Accessibility) bo'limidan Harfiy'ni yoqing.
+4. Endi Telegram, WhatsApp, Notes yoki istalgan ilovada sevimli klaviaturangizda bemalol yozavering!
 
 ---
 

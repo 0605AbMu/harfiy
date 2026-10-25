@@ -1,10 +1,22 @@
 <resources>
     <string name="app_name">Harfiy</string>
-    <string name="keyboard_name">Harfiy Klaviaturasi</string>
-    <string name="subtype_uzbek">O\'zbekcha (Harfiy)</string>
-    <string name="enable_keyboard_title">Harfiy Klaviaturasini Yoqish</string>
-    <string name="enable_keyboard_step1">1. Tizim sozlamalaridan Harfiy klaviaturasini faollashtiring.</string>
-    <string name="enable_keyboard_step2">2. Asosiy klaviatura sifatida Harfiy ni tanlang.</string>
-    <string name="btn_open_settings">Sozlamalarni Ochish</string>
-    <string name="practice_hint">Bu yerda sinab ko\'ring: shahar, choy, o\'rik, g\'isht...</string>
+    <string name="accessibility_service_name">Harfiy Yordamchisi</string>
+    <string name="accessibility_service_description">Telefoningizning sevimli klaviaturasida (Gboard, Samsung va b.) yozish paytida sh, ch, o\', g\' birikmalarini real vaqtda yangi o‘zbek lotin harflariga (ş, ç, ö, ğ) avtomatik aylantirib beradi.</string>
+    
+    <string name="status_title">Xizmat holati</string>
+    <string name="status_active">✅ Harfiy faol (Klaviaturangiz ustida ishlamoqda)</string>
+    <string name="status_inactive">⚠️ Harfiy o‘chiq (Maxsus imkoniyatlar yoqilmagan)</string>
+    
+    <string name="btn_enable_service">Harfiy\'ni faollashtirish</string>
+    <string name="btn_settings">Sozlamalarni ochish</string>
+    
+    <string name="settings_title">Sozlamalar</string>
+    <string name="setting_enabled">Harfiy almashtirishini yoqish</string>
+    <string name="setting_enable_ng">\"ng\" qoidasi (ng -> ñ)</string>
+    <string name="setting_instant_undo">Instant Undo (Backspace bilan qaytarish)</string>
+    
+    <string name="practice_title">Sinov maydoni (telefoningiz klaviaturasida yozing):</string>
+    <string name="practice_hint">Yozib ko‘ring: shahar, choy, o\'rik, g\'isht...</string>
+    
+    <string name="info_text">💡 Eslatma: Harfiy hech qanday qo‘shimcha klaviatura talab qilmaydi. Siz har doimgidek Gboard yoki Samsung klaviaturangizda yozasiz, Harfiy esa fonda harflarni avtomatik to‘g‘rilab boradi.</string>
 </resources>
