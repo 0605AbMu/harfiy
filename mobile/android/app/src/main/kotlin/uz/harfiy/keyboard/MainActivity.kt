@@ -207,43 +207,7 @@ class MainActivity : Activity() {
         }
 
         // =====================================================================
-        // 3. SINAB KO‘RISH MAYDONI (Interactive Playground)
-        // =====================================================================
-        val testCard = createCard()
-        root.addView(testCard)
-
-        val testTitle = TextView(this).apply {
-            text = "Sinab ko‘ring"
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#1E293B"))
-        }
-        testCard.addView(testTitle)
-
-        val testDesc = TextView(this).apply {
-            text = "Klaviaturangizda shahar, choy, o'rik, g'isht deb yozing:"
-            textSize = 13f
-            setTextColor(Color.parseColor("#64748B"))
-            setPadding(0, dp(4), 0, dp(10))
-        }
-        testCard.addView(testDesc)
-
-        val practiceField = EditText(this).apply {
-            hint = "Bu yerga yozing..."
-            textSize = 16f
-            setHintTextColor(Color.parseColor("#94A3B8"))
-            setTextColor(Color.parseColor("#0F172A"))
-            val padField = dp(12)
-            setPadding(padField, padField, padField, padField)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F1F5F9"))
-                cornerRadius = dp(10).toFloat()
-            }
-        }
-        testCard.addView(practiceField)
-
-        // =====================================================================
-        // 4. KATTA MATNLARNI O‘GIRISH (Batch Converter)
+        // 3. MATNNI O‘GIRISH VA SINASH (Unified Playground & Converter)
         // =====================================================================
         val convertCard = createCard()
         root.addView(convertCard)
@@ -259,7 +223,7 @@ class MainActivity : Activity() {
             }
         }
         val convertTitle = TextView(this).apply {
-            text = "Katta matnlarni o‘girish"
+            text = "Matnni o‘girish va sinash"
             textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#1E293B"))
@@ -269,7 +233,7 @@ class MainActivity : Activity() {
         convertCard.addView(convertTitleRow)
 
         val convertSubtitle = TextView(this).apply {
-            text = "Istalgan maqola yoki xabarni yangi alifboga o‘giring:"
+            text = "Klaviaturangizda yozib ko‘ring yoki istalgan matnni yangi alifboga o‘giring:"
             textSize = 13f
             setTextColor(Color.parseColor("#64748B"))
             setPadding(0, dp(4), 0, dp(10))
@@ -277,7 +241,7 @@ class MainActivity : Activity() {
         convertCard.addView(convertSubtitle)
 
         val convertInput = EditText(this).apply {
-            hint = "Matnni bu yerga qo‘ying yoki yozing..."
+            hint = "Yozing (masalan: shahar, choy, o‘rik) yoki matn nusxasini qo‘ying..."
             textSize = 15f
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
@@ -370,7 +334,7 @@ class MainActivity : Activity() {
         convertCard.addView(convertBtnRow)
 
         // =====================================================================
-        // 5. QULAY SOZLAMALAR (Settings)
+        // 4. QULAY SOZLAMALAR (Settings)
         // =====================================================================
         val settingsCard = createCard()
         root.addView(settingsCard)
@@ -489,7 +453,7 @@ class MainActivity : Activity() {
         settingsCard.addView(excludedRow)
 
         // =====================================================================
-        // 6. SIZNING NATIJALARINGIZ (Statistics)
+        // 5. SIZNING NATIJALARINGIZ (Statistics)
         // =====================================================================
         val statsCard = createCard()
         root.addView(statsCard)
@@ -601,7 +565,7 @@ class MainActivity : Activity() {
         statsCard.addView(btnClearStats)
 
         // =====================================================================
-        // 7. BIZ BILAN BOG‘LANISH (Links & About)
+        // 6. BIZ BILAN BOG‘LANISH (Links & About)
         // =====================================================================
         val linksCard = createCard()
         root.addView(linksCard)
@@ -844,9 +808,20 @@ class MainActivity : Activity() {
             ?: mutableSetOf()
 
         val pm = packageManager
-        val installedApps = pm.getInstalledApplications(0)
-            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName == "com.google.android.apps.messaging" }
-            .sortedBy { pm.getApplicationLabel(it).toString() }
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveList = pm.queryIntentActivities(mainIntent, 0)
+        val installedApps = resolveList
+            .map { it.activityInfo.applicationInfo }
+            .filter { it.packageName != packageName } // Harfiy'ning o'zini ro'yxatdan chiqarib tashlaymiz
+            .distinctBy { it.packageName }
+            .sortedBy { pm.getApplicationLabel(it).toString().lowercase(Locale.getDefault()) }
+
+        if (installedApps.isEmpty()) {
+            Toast.makeText(this, "Ilovalar topilmadi", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val appNames = installedApps.map { pm.getApplicationLabel(it).toString() }.toTypedArray()
         val checkedItems = installedApps.map { currentExcluded.contains(it.packageName) }.toBooleanArray()
