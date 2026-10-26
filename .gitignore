@@ -10,6 +10,14 @@ Thumbs.db
 *~
 *.log
 
+# Xcode
+*.xcuserstate
+project.xcworkspace/xcuserdata/
+*.xcuserdatad
+DerivedData/
+build/
+.build/
+
 # Mobile build outputs
 mobile/ios/Frameworks/
 mobile/android/app/src/main/jniLibs/
