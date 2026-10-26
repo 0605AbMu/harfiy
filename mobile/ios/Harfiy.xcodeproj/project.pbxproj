@@ -10,9 +10,15 @@
 		A10000012C00000100000001 /* HarfiyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000012C00000100000001 /* HarfiyApp.swift */; };
 		A10000022C00000100000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000022C00000100000001 /* ContentView.swift */; };
 		A10000032C00000100000001 /* HarfiyKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = C10000022C00000100000001 /* HarfiyKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000042C00000100000001 /* HarfiySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000042C00000100000001 /* HarfiySettings.swift */; };
+		A10000052C00000100000001 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000052C00000100000001 /* Color+Hex.swift */; };
+		A10000062C00000100000001 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000062C00000100000001 /* SetupWizardView.swift */; };
+		A10000072C00000100000001 /* HarfiyEngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000022C00000100000001 /* HarfiyEngineBridge.swift */; };
+		A10000082C00000100000001 /* HarfiyCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B30000012C00000100000001 /* HarfiyCore.xcframework */; };
 		A20000012C00000100000001 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012C00000100000001 /* KeyboardViewController.swift */; };
 		A20000022C00000100000001 /* HarfiyEngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000022C00000100000001 /* HarfiyEngineBridge.swift */; };
 		A20000032C00000100000001 /* HarfiyCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B30000012C00000100000001 /* HarfiyCore.xcframework */; };
+		A20000042C00000100000001 /* HarfiySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000042C00000100000001 /* HarfiySettings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +49,9 @@
 		B10000012C00000100000001 /* HarfiyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyApp.swift; sourceTree = "<group>"; };
 		B10000022C00000100000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B10000032C00000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000042C00000100000001 /* HarfiySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiySettings.swift; sourceTree = "<group>"; };
+		B10000052C00000100000001 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
+		B10000062C00000100000001 /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
 		C10000012C00000100000001 /* Harfiy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Harfiy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000012C00000100000001 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		B20000022C00000100000001 /* HarfiyEngineBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyEngineBridge.swift; sourceTree = "<group>"; };
@@ -56,6 +65,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000082C00000100000001 /* HarfiyCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +95,9 @@
 			children = (
 				B10000012C00000100000001 /* HarfiyApp.swift */,
 				B10000022C00000100000001 /* ContentView.swift */,
+				B10000042C00000100000001 /* HarfiySettings.swift */,
+				B10000052C00000100000001 /* Color+Hex.swift */,
+				B10000062C00000100000001 /* SetupWizardView.swift */,
 				B10000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyApp;
@@ -217,6 +230,10 @@
 			files = (
 				A10000012C00000100000001 /* HarfiyApp.swift in Sources */,
 				A10000022C00000100000001 /* ContentView.swift in Sources */,
+				A10000042C00000100000001 /* HarfiySettings.swift in Sources */,
+				A10000052C00000100000001 /* Color+Hex.swift in Sources */,
+				A10000062C00000100000001 /* SetupWizardView.swift in Sources */,
+				A10000072C00000100000001 /* HarfiyEngineBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -226,6 +243,7 @@
 			files = (
 				A20000012C00000100000001 /* KeyboardViewController.swift in Sources */,
 				A20000022C00000100000001 /* HarfiyEngineBridge.swift in Sources */,
+				A20000042C00000100000001 /* HarfiySettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
