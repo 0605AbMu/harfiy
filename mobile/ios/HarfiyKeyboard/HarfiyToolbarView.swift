@@ -47,7 +47,7 @@ public struct HarfiyToolbarView: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(Color.blue)
 
-                Text("sh➔ş  ch➔ç  oʻ➔ö  gʻ➔ğ")
+                Text(settings.enableNg ? "sh➔ş  ch➔ç  oʻ➔ö  gʻ➔ğ  ng➔ñ" : "sh➔ş  ch➔ç  oʻ➔ö  gʻ➔ğ")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(Color.secondary)
                     .lineLimit(1)

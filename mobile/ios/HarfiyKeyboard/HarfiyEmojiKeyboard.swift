@@ -153,5 +153,6 @@ public struct HarfiyEmojiKeyboard: View {
 
     private func returnToTextKeyboard() {
         controller?.state.keyboardContext.keyboardType = .alphabetic(.auto)
+        controller?.setKeyboardType(.alphabetic(.auto))
     }
 }
