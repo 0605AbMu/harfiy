@@ -315,6 +315,7 @@ public struct ContentView: View {
                             .foregroundColor(Color(hex: "#94A3B8"))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
+                            .allowsHitTesting(false)
                     }
 
                     TextEditor(text: $practiceText)
