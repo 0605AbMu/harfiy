@@ -84,7 +84,7 @@ public struct HarfiyToolbarView: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 38)
+        .frame(height: 44)
         .background(Color.clear)
     }
 

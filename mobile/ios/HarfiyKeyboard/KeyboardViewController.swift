@@ -16,6 +16,9 @@ public class KeyboardViewController: KeyboardInputViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Ensure extension view does not clip content bounds
+        view.clipsToBounds = false
+
         // Enable classic mode for Next Keyboard button to bind directly to this controller
         Keyboard.NextKeyboardButtonControllerMode.current = .classic
         Keyboard.NextKeyboardButtonProxyMode.current = .classic
@@ -25,6 +28,9 @@ public class KeyboardViewController: KeyboardInputViewController {
 
         // Inject Harfiy action handler into KeyboardKit services
         services.actionHandler = HarfiyActionHandler(controller: self)
+
+        // Inject custom Harfiy style service to prevent callout bubbles from clipping
+        services.styleService = HarfiyKeyboardStyleService(keyboardContext: state.keyboardContext)
     }
 
     public override func viewWillSetupKeyboardView() {
