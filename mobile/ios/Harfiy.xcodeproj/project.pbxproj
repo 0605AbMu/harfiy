@@ -25,6 +25,7 @@
 		A20000072C00000100000001 /* HarfiyKeyboardLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */; };
 		A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */; };
 		A20000092C00000100000001 /* HarfiyNextKeyboardButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */; };
+		A200000A2C00000100000001 /* HarfiyToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000082C00000100000001 /* HarfiyToolbarView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +66,7 @@
 		B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyKeyboardLayoutService.swift; sourceTree = "<group>"; };
 		B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyEmojiKeyboard.swift; sourceTree = "<group>"; };
 		B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyNextKeyboardButton.swift; sourceTree = "<group>"; };
+		B20000082C00000100000001 /* HarfiyToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyToolbarView.swift; sourceTree = "<group>"; };
 		B30000012C00000100000001 /* HarfiyCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = HarfiyCore.xcframework; sourceTree = "<group>"; };
 		C10000012C00000100000001 /* Harfiy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = Harfiy.app; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -124,6 +126,7 @@
 				B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */,
 				B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */,
 				B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */,
+				B20000082C00000100000001 /* HarfiyToolbarView.swift */,
 				B20000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyKeyboard;
@@ -273,6 +276,7 @@
 				A20000072C00000100000001 /* HarfiyKeyboardLayoutService.swift in Sources */,
 				A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */,
 				A20000092C00000100000001 /* HarfiyNextKeyboardButton.swift in Sources */,
+				A200000A2C00000100000001 /* HarfiyToolbarView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

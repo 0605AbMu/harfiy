@@ -39,6 +39,25 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
         engine.reset()
     }
 
+    /// Trigger Instant Undo for recent automatic conversion
+    public func handleUndo() {
+        guard let controller = keyboardController else { return }
+        if settings.instantUndo {
+            let result = engine.processBackspace()
+            switch result {
+            case .passThrough, .suppress:
+                controller.deleteBackward()
+            case .transform(let backspacesCount, let replacement):
+                for _ in 0..<backspacesCount {
+                    controller.deleteBackward()
+                }
+                controller.insertText(replacement)
+            }
+        } else {
+            controller.deleteBackward()
+        }
+    }
+
     open override func handle(
         _ gesture: Keyboard.Gesture,
         on action: KeyboardAction

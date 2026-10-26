@@ -54,7 +54,9 @@ public class KeyboardViewController: KeyboardInputViewController {
                 emojiKeyboard: { _ in
                     HarfiyEmojiKeyboard(controller: controller)
                 },
-                toolbar: { _ in EmptyView() }
+                toolbar: { _ in
+                    HarfiyToolbarView(controller: controller)
+                }
             )
         }
     }
