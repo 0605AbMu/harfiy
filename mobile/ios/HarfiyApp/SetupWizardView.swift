@@ -15,7 +15,9 @@ public struct SetupWizardView: View {
     @State private var currentStep: Int = 1
     @State private var testInput: String = ""
     @State private var hasTestedSuccessfully: Bool = false
+    @State private var isProcessingLiveChange: Bool = false
 
+    private let engine = HarfiyEngineBridge()
     private let totalSteps = 4
 
     public init(isPresented: Binding<Bool>, initialStep: Int = 1) {
@@ -291,6 +293,20 @@ public struct SetupWizardView: View {
                         let lower = val.lowercased()
                         if lower.contains("ş") || lower.contains("ç") || lower.contains("ö") || lower.contains("ğ") || lower.contains("ñ") {
                             hasTestedSuccessfully = true
+                        } else if !isProcessingLiveChange && !val.isEmpty {
+                            engine.setEnableNg(settings.enableNg)
+                            let (converted, count) = engine.convertText(val, smartApostrophe: settings.smartApostrophe)
+                            if converted != val {
+                                isProcessingLiveChange = true
+                                testInput = converted
+                                if count > 0 {
+                                    hasTestedSuccessfully = true
+                                    settings.recordBatchConversions(totalAdded: count)
+                                }
+                                DispatchQueue.main.async {
+                                    self.isProcessingLiveChange = false
+                                }
+                            }
                         }
                     }
 

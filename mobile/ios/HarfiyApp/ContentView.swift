@@ -20,10 +20,12 @@ public struct ContentView: View {
     @ObservedObject var settings = HarfiySettings.shared
     @StateObject private var keyboardStatus = KeyboardStatusContext(bundleId: "uz.harfiy.keyboard.*")
     @State private var practiceText: String = ""
+    @State private var isProcessingLiveChange: Bool = false
     @State private var showingWizard: Bool = false
     @State private var showingClearStatsAlert: Bool = false
     @State private var toastMessage: String? = nil
     @State private var isKeyboardActiveInSystem: Bool = false
+    @FocusState private var isFieldFocused: Bool
 
     private let engine = HarfiyEngineBridge()
 
@@ -319,11 +321,15 @@ public struct ContentView: View {
                     }
 
                     TextEditor(text: $practiceText)
+                        .focused($isFieldFocused)
                         .font(.system(size: 15))
                         .foregroundColor(Color(hex: "#0F172A"))
                         .frame(minHeight: 90)
                         .padding(8)
                         .background(Color.clear)
+                        .onChange(of: practiceText) { newValue in
+                            handleLiveTextChange(newValue)
+                        }
                 }
                 .background(Color(hex: "#F8FAFC"))
                 .cornerRadius(14)
@@ -665,6 +671,24 @@ public struct ContentView: View {
             settings.recordBatchConversions(totalAdded: count)
         }
         showToast("Matn to‘liq o‘girildi!")
+    }
+
+    private func handleLiveTextChange(_ newValue: String) {
+        guard !isProcessingLiveChange else { return }
+        guard !newValue.isEmpty else { return }
+
+        engine.setEnableNg(settings.enableNg)
+        let (converted, count) = engine.convertText(newValue, smartApostrophe: settings.smartApostrophe)
+        if converted != newValue {
+            isProcessingLiveChange = true
+            practiceText = converted
+            if count > 0 {
+                settings.recordBatchConversions(totalAdded: count)
+            }
+            DispatchQueue.main.async {
+                self.isProcessingLiveChange = false
+            }
+        }
     }
 
     private func copyPracticeText() {
