@@ -39,12 +39,41 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
         engine.reset()
     }
 
+    open override func handle(
+        _ gesture: Keyboard.Gesture,
+        on action: KeyboardAction
+    ) {
+        if action == .custom(named: "emoji") {
+            if gesture == .release || gesture == .press {
+                keyboardContext.keyboardType = .emojis
+                keyboardController?.setKeyboardType(.emojis)
+                return
+            }
+        }
+        if action == .nextKeyboard && gesture == .release {
+            (keyboardController as? UIInputViewController)?.advanceToNextInputMode()
+            return
+        }
+        super.handle(gesture, on: action)
+    }
+
     open override func action(
         for gesture: Keyboard.Gesture,
         on action: KeyboardAction
     ) -> KeyboardAction.GestureAction? {
         if gesture == .release {
             switch action {
+            case .nextKeyboard:
+                return { controller in
+                    (controller as? UIInputViewController)?.advanceToNextInputMode()
+                }
+
+            case .custom(named: "emoji"):
+                return { [weak self] controller in
+                    self?.keyboardContext.keyboardType = .emojis
+                    controller?.setKeyboardType(.emojis)
+                }
+
             case .character(let charStr):
                 return { [weak self] controller in
                     guard let self = self, let char = charStr.first else {

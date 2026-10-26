@@ -16,6 +16,13 @@ public class KeyboardViewController: KeyboardInputViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Enable classic mode for Next Keyboard button to bind directly to this controller
+        Keyboard.NextKeyboardButtonControllerMode.current = .classic
+        Keyboard.NextKeyboardButtonProxyMode.current = .classic
+
+        // Inject custom layout service to guarantee Next Keyboard (Globe 🌐) and Emoji (😀) buttons
+        services.layoutService = HarfiyKeyboardLayoutService()
+
         // Inject Harfiy action handler into KeyboardKit services
         services.actionHandler = HarfiyActionHandler(controller: self)
     }
@@ -23,14 +30,30 @@ public class KeyboardViewController: KeyboardInputViewController {
     public override func viewWillSetupKeyboardView() {
         super.viewWillSetupKeyboardView()
 
-        // Setup KeyboardKit native-style keyboard view
+        // Setup KeyboardKit native-style keyboard view with custom emoji & globe support
         setupKeyboardView { controller in
             KeyboardView(
                 state: controller.state,
                 services: controller.services,
-                buttonContent: { $0.view },
-                buttonView: { $0.view },
-                emojiKeyboard: { $0.view },
+                buttonContent: { params in
+                    if params.item.action == KeyboardAction.custom(named: "emoji") {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 20))
+                    } else {
+                        params.view
+                    }
+                },
+                buttonView: { params in
+                    if params.item.action == .nextKeyboard {
+                        params.view
+                            .overlay(HarfiyNextKeyboardButton(controller: controller))
+                    } else {
+                        params.view
+                    }
+                },
+                emojiKeyboard: { _ in
+                    HarfiyEmojiKeyboard(controller: controller)
+                },
                 toolbar: { _ in EmptyView() }
             )
         }
