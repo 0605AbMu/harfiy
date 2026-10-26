@@ -14,9 +14,11 @@
 
 import SwiftUI
 import UIKit
+import KeyboardKit
 
 public struct ContentView: View {
     @ObservedObject var settings = HarfiySettings.shared
+    @StateObject private var keyboardStatus = KeyboardStatusContext(bundleId: "uz.harfiy.keyboard.*")
     @State private var practiceText: String = ""
     @State private var showingWizard: Bool = false
     @State private var showingClearStatsAlert: Bool = false
@@ -683,18 +685,8 @@ public struct ContentView: View {
     }
 
     private func checkKeyboardSystemStatus() {
-        // In iOS, check active input modes
-        let activeModes = UITextInputMode.activeInputModes
-        let bundleId = Bundle.main.bundleIdentifier ?? ""
-        var found = false
-        for mode in activeModes {
-            if let lang = mode.primaryLanguage, lang.contains("Harfiy") || lang.contains("uz.harfiy") {
-                found = true
-                break
-            }
-        }
-        // Fallback: if user already completed the wizard, treat as ready
-        self.isKeyboardActiveInSystem = found || settings.hasCompletedWizard
+        keyboardStatus.refresh()
+        self.isKeyboardActiveInSystem = keyboardStatus.isKeyboardEnabled || settings.hasCompletedWizard
     }
 }
 

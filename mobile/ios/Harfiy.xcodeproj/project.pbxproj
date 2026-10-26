@@ -15,10 +15,13 @@
 		A10000062C00000100000001 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000062C00000100000001 /* SetupWizardView.swift */; };
 		A10000072C00000100000001 /* HarfiyEngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000022C00000100000001 /* HarfiyEngineBridge.swift */; };
 		A10000082C00000100000001 /* HarfiyCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B30000012C00000100000001 /* HarfiyCore.xcframework */; };
+		A10000092C00000100000001 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = E30000022C00000100000001 /* KeyboardKit */; };
 		A20000012C00000100000001 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000012C00000100000001 /* KeyboardViewController.swift */; };
 		A20000022C00000100000001 /* HarfiyEngineBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000022C00000100000001 /* HarfiyEngineBridge.swift */; };
 		A20000032C00000100000001 /* HarfiyCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B30000012C00000100000001 /* HarfiyCore.xcframework */; };
 		A20000042C00000100000001 /* HarfiySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000042C00000100000001 /* HarfiySettings.swift */; };
+		A20000052C00000100000001 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = E30000022C00000100000001 /* KeyboardKit */; };
+		A20000062C00000100000001 /* HarfiyActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000042C00000100000001 /* HarfiyActionHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,12 +55,13 @@
 		B10000042C00000100000001 /* HarfiySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiySettings.swift; sourceTree = "<group>"; };
 		B10000052C00000100000001 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		B10000062C00000100000001 /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
-		C10000012C00000100000001 /* Harfiy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Harfiy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B20000012C00000100000001 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		B20000022C00000100000001 /* HarfiyEngineBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyEngineBridge.swift; sourceTree = "<group>"; };
 		B20000032C00000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000042C00000100000001 /* HarfiyActionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyActionHandler.swift; sourceTree = "<group>"; };
 		B30000012C00000100000001 /* HarfiyCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = HarfiyCore.xcframework; sourceTree = "<group>"; };
+		C10000012C00000100000001 /* Harfiy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = Harfiy.app; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +70,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000082C00000100000001 /* HarfiyCore.xcframework in Frameworks */,
+				A10000092C00000100000001 /* KeyboardKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -74,6 +79,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A20000032C00000100000001 /* HarfiyCore.xcframework in Frameworks */,
+				A20000052C00000100000001 /* KeyboardKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +114,7 @@
 			children = (
 				B20000012C00000100000001 /* KeyboardViewController.swift */,
 				B20000022C00000100000001 /* HarfiyEngineBridge.swift */,
+				B20000042C00000100000001 /* HarfiyActionHandler.swift */,
 				B20000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyKeyboard;
@@ -148,6 +155,9 @@
 				D20000012C00000100000001 /* PBXTargetDependency */,
 			);
 			name = HarfiyApp;
+			packageProductDependencies = (
+				E30000022C00000100000001 /* KeyboardKit */,
+			);
 			productName = HarfiyApp;
 			productReference = C10000012C00000100000001 /* Harfiy.app */;
 			productType = "com.apple.product-type.application";
@@ -165,6 +175,9 @@
 			dependencies = (
 			);
 			name = HarfiyKeyboard;
+			packageProductDependencies = (
+				E30000022C00000100000001 /* KeyboardKit */,
+			);
 			productName = HarfiyKeyboard;
 			productReference = C10000022C00000100000001 /* HarfiyKeyboard.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -196,6 +209,9 @@
 				Base,
 			);
 			mainGroup = 010000022C00000100000001;
+			packageReferences = (
+				E30000012C00000100000001 /* XCRemoteSwiftPackageReference "KeyboardKit" */,
+			);
 			productRefGroup = 010000062C00000100000001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -244,6 +260,7 @@
 				A20000012C00000100000001 /* KeyboardViewController.swift in Sources */,
 				A20000022C00000100000001 /* HarfiyEngineBridge.swift in Sources */,
 				A20000042C00000100000001 /* HarfiySettings.swift in Sources */,
+				A20000062C00000100000001 /* HarfiyActionHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -487,6 +504,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E30000012C00000100000001 /* XCRemoteSwiftPackageReference "KeyboardKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/KeyboardKit/KeyboardKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E30000022C00000100000001 /* KeyboardKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E30000012C00000100000001 /* XCRemoteSwiftPackageReference "KeyboardKit" */;
+			productName = KeyboardKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 010000012C00000100000001 /* Project object */;
 }
