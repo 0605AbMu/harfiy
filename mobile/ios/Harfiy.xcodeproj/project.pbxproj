@@ -27,6 +27,7 @@
 		A20000092C00000100000001 /* HarfiyNextKeyboardButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */; };
 		A200000A2C00000100000001 /* HarfiyToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000082C00000100000001 /* HarfiyToolbarView.swift */; };
 		A200000B2C00000100000001 /* HarfiyKeyboardStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */; };
+		A10000102C00000100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000072C00000100000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,8 +71,9 @@
 		B20000082C00000100000001 /* HarfiyToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyToolbarView.swift; sourceTree = "<group>"; };
 		B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyKeyboardStyleService.swift; sourceTree = "<group>"; };
 		B30000012C00000100000001 /* HarfiyCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = HarfiyCore.xcframework; sourceTree = "<group>"; };
-		C10000012C00000100000001 /* Harfiy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = Harfiy.app; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10000012C00000100000001 /* HarfiyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000072C00000100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +116,7 @@
 				B10000042C00000100000001 /* HarfiySettings.swift */,
 				B10000052C00000100000001 /* Color+Hex.swift */,
 				B10000062C00000100000001 /* SetupWizardView.swift */,
+				B10000072C00000100000001 /* Assets.xcassets */,
 				B10000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyApp;
@@ -146,7 +149,7 @@
 		010000062C00000100000001 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				C10000012C00000100000001 /* Harfiy.app */,
+				C10000012C00000100000001 /* HarfiyApp.app */,
 				C10000022C00000100000001 /* HarfiyKeyboard.appex */,
 			);
 			name = Products;
@@ -174,7 +177,7 @@
 				E30000022C00000100000001 /* KeyboardKit */,
 			);
 			productName = HarfiyApp;
-			productReference = C10000012C00000100000001 /* Harfiy.app */;
+			productReference = C10000012C00000100000001 /* HarfiyApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 		E20000012C00000100000001 /* HarfiyKeyboard */ = {
@@ -242,6 +245,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000102C00000100000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -417,6 +421,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyApp/Info.plist;
@@ -438,6 +443,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyApp/Info.plist;
@@ -458,6 +464,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -478,6 +485,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
