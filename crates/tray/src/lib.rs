@@ -707,7 +707,12 @@ impl StandaloneHotKey {
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok();
+        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok().or_else(|| {
+            Some(HotKey::new(
+                Some(Modifiers::CONTROL | Modifiers::ALT),
+                Code::KeyU,
+            ))
+        });
         if let Some(chk) = convert_hotkey {
             let _ = hotkey_manager.register(chk);
         }

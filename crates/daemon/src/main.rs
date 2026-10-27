@@ -100,41 +100,57 @@ fn perform_quick_convert(
     tray_controller: Option<&TrayController>,
     conversions_counter: &Arc<AtomicU64>,
 ) {
+    let initial_text = harfiy_platform::get_clipboard_text();
+
+    // Trigger synthetic copy of the currently selected text
     harfiy_platform::emit_copy();
-    thread::sleep(Duration::from_millis(60));
 
-    if let Some(text) = harfiy_platform::get_clipboard_text() {
-        if !text.is_empty() {
-            let (converted, count) = harfiy_engine::convert_text(
-                &text,
-                app_config.enable_ng,
-                app_config.smart_apostrophe,
-            );
-            if count > 0 && converted != text {
-                harfiy_platform::set_clipboard_text(&converted);
-                harfiy_platform::emit_paste();
-
-                let new_total =
-                    conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
-                app_config.total_conversions = new_total;
-                let _ = app_config.save();
-
-                if let Some(tray) = tray_controller {
-                    tray.update_stats(new_total);
-                }
-
-                harfiy_platform::show_custom_hud(
-                    &format!("Matn o'girildi ({} ta harf)", count),
-                    true,
-                );
-                println!(
-                    "Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.",
-                    count
-                );
-            } else {
-                harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
+    // Poll the clipboard for up to 300ms so slower targets (Word, browsers) have time to
+    // process the copy. If it never changes (e.g. the selection equals the old clipboard),
+    // fall back to whatever text is on the clipboard now.
+    let mut text = None;
+    for _ in 0..10 {
+        thread::sleep(Duration::from_millis(30));
+        if let Some(current) = harfiy_platform::get_clipboard_text() {
+            if !current.is_empty() && Some(&current) != initial_text.as_ref() {
+                text = Some(current);
+                break;
             }
         }
+    }
+    let text = match text.or_else(harfiy_platform::get_clipboard_text) {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            harfiy_platform::show_custom_hud("Matn tanlanmagan", false);
+            return;
+        }
+    };
+
+    let (converted, count) = harfiy_engine::convert_text(
+        &text,
+        app_config.enable_ng,
+        app_config.smart_apostrophe,
+    );
+    if count > 0 && converted != text {
+        harfiy_platform::set_clipboard_text(&converted);
+        harfiy_platform::emit_paste();
+
+        let new_total =
+            conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
+        app_config.total_conversions = new_total;
+        let _ = app_config.save();
+
+        if let Some(tray) = tray_controller {
+            tray.update_stats(new_total);
+        }
+
+        harfiy_platform::show_custom_hud(&format!("Matn o'girildi ({} ta harf)", count), true);
+        println!(
+            "Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.",
+            count
+        );
+    } else {
+        harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
     }
 }
 
