@@ -4,6 +4,7 @@
 //! Real-time Uzbek Latin orthography conversion engine.
 
 mod config;
+mod convert_file;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -431,6 +432,15 @@ fn run_daemon(no_tray: bool) {
                             &mut app_config,
                             tray_controller.as_ref(),
                             &conversions_counter,
+                        );
+                    }
+                    TrayCommand::ConvertFile => {
+                        convert_file::start(
+                            harfiy_docs::ConvertOptions {
+                                enable_ng: app_config.enable_ng,
+                                smart_apostrophe: app_config.smart_apostrophe,
+                            },
+                            Arc::clone(&conversions_counter),
                         );
                     }
                     TrayCommand::ToggleNg(enabled) => {

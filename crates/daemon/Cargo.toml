@@ -12,6 +12,7 @@ name = "harfiy"
 path = "src/main.rs"
 
 [dependencies]
+harfiy-docs = { path = "../docs" }
 harfiy-engine = { path = "../engine" }
 harfiy-platform = { path = "../platform" }
 harfiy-tray = { path = "../tray" }
