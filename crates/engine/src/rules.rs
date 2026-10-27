@@ -11,7 +11,14 @@ pub fn is_apostrophe(c: char) -> bool {
         | '’'       // U+2019 RIGHT SINGLE QUOTATION MARK
         | 'ʻ'       // U+02BB MODIFIER LETTER TURNED COMMA
         | 'ʼ'       // U+02BC MODIFIER LETTER APOSTROPHE
-        | '´' // U+00B4 ACUTE ACCENT
+        | '´'       // U+00B4 ACUTE ACCENT
+        | '‛'       // U+201B SINGLE HIGH-REVERSED-9 QUOTATION MARK
+        | 'ʽ'       // U+02BD MODIFIER LETTER REVERSED COMMA
+        | 'ʹ'       // U+02B9 MODIFIER LETTER PRIME
+        | '′'       // U+2032 PRIME
+        | '＇'       // U+FF07 FULLWIDTH APOSTROPHE
+        | 'ˊ'       // U+02CA MODIFIER LETTER ACUTE ACCENT
+        | 'ˋ'       // U+02CB MODIFIER LETTER GRAVE ACCENT
     )
 }
 
