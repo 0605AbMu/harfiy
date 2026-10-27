@@ -33,8 +33,24 @@ public class KeyboardViewController: KeyboardInputViewController {
         services.styleService = HarfiyKeyboardStyleService(keyboardContext: state.keyboardContext)
     }
 
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // A new text field (or the same one after switching keyboards) starts clean.
+        (services.actionHandler as? HarfiyActionHandler)?.resetEngine()
+
+        // KeyboardKit only applies auto-capitalization after a text change, so the very
+        // first appearance started lowercase. super.viewWillAppear queues an async context
+        // sync; this block runs after it, once the proxy's autocapitalization is known.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let context = self.state.keyboardContext
+            guard context.keyboardType.isAlphabetic else { return }
+            self.setKeyboardType(context.preferredKeyboardType)
+        }
+    }
+
     public override func viewWillSetupKeyboardView() {
-        super.viewWillSetupKeyboardView()
+        // Not calling super: it would build KeyboardKit's default view first, only to be replaced.
 
         // Setup KeyboardKit native-style keyboard view with custom emoji & globe support
         setupKeyboardView { controller in
@@ -67,8 +83,13 @@ public class KeyboardViewController: KeyboardInputViewController {
         }
     }
 
-    public override func textDidChange(_ textInput: UITextInput?) {
-        super.textDidChange(textInput)
-        (services.actionHandler as? HarfiyActionHandler)?.resetEngine()
+    public override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        // Read the context on the next run loop, once the proxy has caught up.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            (self.services.actionHandler as? HarfiyActionHandler)?
+                .selectionDidChange(contextBeforeInput: self.textDocumentProxy.documentContextBeforeInput)
+        }
     }
 }
