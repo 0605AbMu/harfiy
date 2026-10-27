@@ -22,6 +22,11 @@ public final class HarfiyEngineBridge {
     private var handle: HarfiyEngineHandle?
     public var isEnableNg: Bool = false
 
+    // State machine for pure Swift fallback (when HarfiyCore is not linked)
+    private var fallbackPrevChar: Character?
+    private var fallbackJustTransformedUndo: String?
+    private var fallbackHistory: [Character] = []
+
     public init(enableNg: Bool = false) {
         self.isEnableNg = enableNg
         #if canImport(HarfiyCore)
@@ -39,11 +44,18 @@ public final class HarfiyEngineBridge {
 
     /// Reset engine state (e.g. on cursor tap, text selection, or focus change).
     public func reset() {
+        fallbackReset()
         #if canImport(HarfiyCore)
         if let h = handle {
             harfiy_engine_reset(h)
         }
         #endif
+    }
+
+    private func fallbackReset() {
+        fallbackPrevChar = nil
+        fallbackJustTransformedUndo = nil
+        fallbackHistory.removeAll(keepingCapacity: true)
     }
 
     /// Dynamically enable or disable 'ng' -> 'ñ' conversion.
@@ -74,16 +86,17 @@ public final class HarfiyEngineBridge {
     /// Process a Backspace press (supporting Instant Undo).
     public func processBackspace() -> HarfiyAction {
         #if canImport(HarfiyCore)
-        guard let h = handle else { return .passThrough }
+        guard let h = handle else { return fallbackProcessBackspace() }
         let res = harfiy_engine_process_backspace(h)
         return mapResult(res)
         #else
-        return .passThrough
+        return fallbackProcessBackspace()
         #endif
     }
 
     /// Notify engine of a word delimiter (space, return, punctuation).
     public func processDelimiter() {
+        fallbackReset()
         #if canImport(HarfiyCore)
         if let h = handle {
             harfiy_engine_process_delimiter(h)
@@ -127,65 +140,168 @@ public final class HarfiyEngineBridge {
     }
     #endif
 
+    private static let apostrophes: Set<Character> = [
+        "'", "`", "‘", "’", "ʻ", "ʼ", "´", "‛", "ʽ", "ʹ", "′", "＇", "ˊ", "ˋ"
+    ]
+
+    private static func isApostrophe(_ c: Character) -> Bool {
+        return apostrophes.contains(c)
+    }
+
+    private static func isWordDelimiter(_ c: Character) -> Bool {
+        if isApostrophe(c) { return false }
+        return c.isWhitespace || c.isPunctuation || "—–…«»“”„•№".contains(c)
+    }
+
+    private static func isFirstTrigger(_ c: Character, enableNg: Bool) -> Bool {
+        switch c {
+        case "s", "S", "c", "C", "o", "O", "g", "G":
+            return true
+        case "n", "N" where enableNg:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func matchRule(prev: Character, curr: Character, enableNg: Bool) -> (replacement: String, originalPair: String)? {
+        switch (prev, curr) {
+        // sh -> ş
+        case ("s", "h"), ("s", "H"): return ("ş", "sh")
+        case ("S", "h"), ("S", "H"): return ("Ş", "Sh")
+
+        // ch -> ç
+        case ("c", "h"), ("c", "H"): return ("ç", "ch")
+        case ("C", "h"), ("C", "H"): return ("Ç", "Ch")
+
+        // o' -> ö
+        case ("o", let c) where isApostrophe(c): return ("ö", "o\(c)")
+        case ("O", let c) where isApostrophe(c): return ("Ö", "O\(c)")
+
+        // g' -> ğ
+        case ("g", let c) where isApostrophe(c): return ("ğ", "g\(c)")
+        case ("G", let c) where isApostrophe(c): return ("Ğ", "G\(c)")
+
+        // ng -> ñ
+        case ("n", "g"), ("n", "G") where enableNg: return ("ñ", "ng")
+        case ("N", "g"), ("N", "G") where enableNg: return ("Ñ", "Ng")
+
+        default: return nil
+        }
+    }
+
     /// Pure Swift fallback in case binary framework is not yet linked or in preview mode.
     private func fallbackProcess(_ char: Character) -> HarfiyAction {
+        // Reset undo state if user typed any character
+        fallbackJustTransformedUndo = nil
+
+        if Self.isWordDelimiter(char) {
+            fallbackReset()
+            return .passThrough
+        }
+
+        if let prev = fallbackPrevChar {
+            if let matched = Self.matchRule(prev: prev, curr: char, enableNg: isEnableNg) {
+                fallbackPrevChar = nil
+                fallbackJustTransformedUndo = matched.originalPair
+                if !fallbackHistory.isEmpty {
+                    fallbackHistory.removeLast()
+                }
+                for ch in matched.replacement {
+                    fallbackPushHistory(ch)
+                }
+                return .transform(backspacesCount: 1, replacement: matched.replacement)
+            } else {
+                fallbackPushHistory(char)
+                if Self.isFirstTrigger(char, enableNg: isEnableNg) {
+                    fallbackPrevChar = char
+                } else {
+                    fallbackPrevChar = nil
+                }
+                return .passThrough
+            }
+        } else {
+            fallbackPushHistory(char)
+            if Self.isFirstTrigger(char, enableNg: isEnableNg) {
+                fallbackPrevChar = char
+            }
+            return .passThrough
+        }
+    }
+
+    /// Pure Swift fallback for Backspace supporting Instant Undo and smart history recovery.
+    private func fallbackProcessBackspace() -> HarfiyAction {
+        if let undo = fallbackJustTransformedUndo {
+            fallbackJustTransformedUndo = nil
+            fallbackPrevChar = nil
+            if !fallbackHistory.isEmpty {
+                fallbackHistory.removeLast()
+            }
+            for ch in undo {
+                fallbackPushHistory(ch)
+            }
+            return .transform(backspacesCount: 1, replacement: undo)
+        }
+
+        if !fallbackHistory.isEmpty {
+            fallbackHistory.removeLast()
+        }
+
+        if let last = fallbackHistory.last, Self.isFirstTrigger(last, enableNg: isEnableNg) {
+            fallbackPrevChar = last
+        } else {
+            fallbackPrevChar = nil
+        }
+
         return .passThrough
     }
 
-    /// Pure Swift batch conversion fallback matching Android's fallback engine.
+    private func fallbackPushHistory(_ c: Character) {
+        if fallbackHistory.count >= 32 {
+            fallbackHistory.removeFirst()
+        }
+        fallbackHistory.append(c)
+    }
+
+    /// Pure Swift batch conversion fallback matching Rust convert_text.
     private func fallbackConvertText(_ input: String, enableNg: Bool, smartApostrophe: Bool) -> (String, Int) {
-        var res = input
+        var result = ""
         var count = 0
+        let chars = Array(input)
+        let len = chars.count
+        var i = 0
 
-        func countMatches(_ str: String, target: String) -> Int {
-            return (str.components(separatedBy: target).count - 1)
-        }
+        while i < len {
+            let curr = chars[i]
+            let next: Character? = (i + 1 < len) ? chars[i + 1] : nil
 
-        let pairs: [(String, String)] = [
-            ("sh", "ş"), ("Sh", "Ş"), ("SH", "Ş"),
-            ("ch", "ç"), ("Ch", "Ç"), ("CH", "Ç")
-        ]
-        for (pattern, repl) in pairs {
-            let occurrences = countMatches(res, target: pattern)
-            if occurrences > 0 {
-                count += occurrences
-                res = res.replacingOccurrences(of: pattern, with: repl)
-            }
-        }
-
-        let apos: [Character] = ["'", "`", "‘", "’", "ʻ", "ʼ", "´"]
-        for a in apos {
-            let oRepl = smartApostrophe ? "oʻ" : "ö"
-            let ORepl = smartApostrophe ? "Oʻ" : "Ö"
-            let gRepl = smartApostrophe ? "gʻ" : "ğ"
-            let GRepl = smartApostrophe ? "Gʻ" : "Ğ"
-
-            let patterns: [(String, String)] = [
-                ("o\(a)", oRepl), ("O\(a)", ORepl),
-                ("g\(a)", gRepl), ("G\(a)", GRepl)
-            ]
-            for (p, r) in patterns {
-                let occurrences = countMatches(res, target: p)
-                if occurrences > 0 {
-                    count += occurrences
-                    res = res.replacingOccurrences(of: p, with: r)
+            var matched = false
+            if let n = next {
+                if let rule = Self.matchRule(prev: curr, curr: n, enableNg: enableNg) {
+                    result.append(rule.replacement)
+                    count += 1
+                    i += 2
+                    matched = true
                 }
             }
-        }
 
-        if enableNg {
-            let ngPairs: [(String, String)] = [
-                ("ng", "ñ"), ("Ng", "Ñ"), ("NG", "Ñ")
-            ]
-            for (p, r) in ngPairs {
-                let occurrences = countMatches(res, target: p)
-                if occurrences > 0 {
-                    count += occurrences
-                    res = res.replacingOccurrences(of: p, with: r)
+            if !matched {
+                // Smart apostrophe (hamza / tutuq belgisi between letters, e.g. ma'no -> maʻno)
+                if smartApostrophe && (curr == "'" || curr == "`") {
+                    let prevIsLetter = (i > 0) && chars[i - 1].isLetter
+                    let nextIsLetter = next?.isLetter ?? false
+                    if prevIsLetter && nextIsLetter {
+                        result.append("ʻ")
+                        count += 1
+                        i += 1
+                        continue
+                    }
                 }
+                result.append(curr)
+                i += 1
             }
         }
 
-        return (res, count)
+        return (result, count)
     }
 }
