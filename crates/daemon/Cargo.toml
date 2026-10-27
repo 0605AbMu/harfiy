@@ -1,6 +1,6 @@
 [package]
 name = "harfiy-daemon"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "Background daemon and CLI runner for Harfiy"
