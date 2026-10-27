@@ -459,11 +459,11 @@ unsafe extern "C" fn macos_event_tap_callback(
         return event;
     }
 
-    // Do not interfere if Command, Control, or Option (Alt) modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C)
+    // Do not interfere if Command or Control modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C).
+    // Note: Option (Alternate) is intentionally NOT blocked because on macOS international and
+    // custom layouts (e.g. Uzbek Latin on macOS), Option is used to type characters and diacritics.
     let flags = CGEventGetFlags(event);
-    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate))
-        != 0
-    {
+    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl)) != 0 {
         return event;
     }
 

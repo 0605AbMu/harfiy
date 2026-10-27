@@ -26,13 +26,15 @@ use windows::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Controls::Dialogs::{
-    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST,
+    OPENFILENAMEW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
+    GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, HKL, INPUT, INPUT_0,
     INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY,
-    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT,
-    VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
+    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LCONTROL,
+    VK_LEFT, VK_LMENU, VK_LWIN, VK_MENU, VK_NEXT, VK_OEM_3, VK_OEM_7, VK_PRIOR, VK_RCONTROL,
+    VK_RETURN, VK_RIGHT, VK_RMENU, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows,
@@ -618,12 +620,22 @@ pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
 
 const CF_UNICODETEXT: u32 = 13;
 
+fn open_clipboard_with_retry() -> bool {
+    for _ in 0..10 {
+        if unsafe { OpenClipboard(None) }.is_ok() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    false
+}
+
 /// Read unicode text currently on Windows clipboard.
 pub fn get_clipboard_text() -> Option<String> {
+    if !open_clipboard_with_retry() {
+        return None;
+    }
     unsafe {
-        if OpenClipboard(None).is_err() {
-            return None;
-        }
         let handle = match GetClipboardData(CF_UNICODETEXT) {
             Ok(h) => h,
             Err(_) => {
@@ -652,10 +664,10 @@ pub fn set_clipboard_text(text: &str) -> bool {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let bytes_count = wide.len() * 2;
 
+    if !open_clipboard_with_retry() {
+        return false;
+    }
     unsafe {
-        if OpenClipboard(None).is_err() {
-            return false;
-        }
         let _ = EmptyClipboard();
 
         let hmem = match GlobalAlloc(GMEM_MOVEABLE, bytes_count) {
@@ -681,117 +693,76 @@ pub fn set_clipboard_text(text: &str) -> bool {
     }
 }
 
+fn make_key_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: HARFIY_MAGIC_FLAG,
+            },
+        },
+    }
+}
+
 /// Emit synthetic Ctrl+C key combination to copy selected text.
 pub fn emit_copy() {
-    let inputs = [
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_CONTROL,
-                    wScan: 0,
-                    dwFlags: KEYBD_EVENT_FLAGS(0),
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0x43), // 'C'
-                    wScan: 0,
-                    dwFlags: KEYBD_EVENT_FLAGS(0),
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0x43),
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_CONTROL,
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
+    // 1. Synthetically release modifier keys that may be held down by the user (e.g. from Ctrl+Alt+U shortcut).
+    // If Alt remains held down, Windows treats the combination as Alt+C or Ctrl+Alt+C rather than Ctrl+C,
+    // failing to copy text to clipboard.
+    let release_inputs = [
+        make_key_input(VK_MENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_LMENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_RMENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
+        make_key_input(VK_LWIN, KEYEVENTF_KEYUP),
+        make_key_input(VK_RWIN, KEYEVENTF_KEYUP),
     ];
     unsafe {
-        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        SendInput(&release_inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(25));
+
+    // 2. Send clean Ctrl+C
+    let copy_inputs = [
+        make_key_input(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
+        make_key_input(VIRTUAL_KEY(0x43), KEYBD_EVENT_FLAGS(0)), // 'C'
+        make_key_input(VIRTUAL_KEY(0x43), KEYEVENTF_KEYUP),
+        make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+    ];
+    unsafe {
+        SendInput(&copy_inputs, std::mem::size_of::<INPUT>() as i32);
     }
 }
 
 /// Emit synthetic Ctrl+V key combination to paste text.
 pub fn emit_paste() {
-    let inputs = [
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_CONTROL,
-                    wScan: 0,
-                    dwFlags: KEYBD_EVENT_FLAGS(0),
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0x56), // 'V'
-                    wScan: 0,
-                    dwFlags: KEYBD_EVENT_FLAGS(0),
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0x56),
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
-        INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_CONTROL,
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: HARFIY_MAGIC_FLAG,
-                },
-            },
-        },
+    // 1. Release Alt / Shift / Win keys before pasting so the target application receives pure Ctrl+V
+    let release_inputs = [
+        make_key_input(VK_MENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_LMENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_RMENU, KEYEVENTF_KEYUP),
+        make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
+        make_key_input(VK_LWIN, KEYEVENTF_KEYUP),
+        make_key_input(VK_RWIN, KEYEVENTF_KEYUP),
     ];
     unsafe {
-        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        SendInput(&release_inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(25));
+
+    // 2. Send clean Ctrl+V
+    let paste_inputs = [
+        make_key_input(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
+        make_key_input(VIRTUAL_KEY(0x56), KEYBD_EVENT_FLAGS(0)), // 'V'
+        make_key_input(VIRTUAL_KEY(0x56), KEYEVENTF_KEYUP),
+        make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+    ];
+    unsafe {
+        SendInput(&paste_inputs, std::mem::size_of::<INPUT>() as i32);
     }
 }
 
@@ -1142,12 +1113,22 @@ pub fn pump_messages() {
     }
 }
 
-/// Check if a modifier key (Ctrl or Alt) is currently pressed down.
+/// Check if a modifier key (Ctrl or Alt) is currently pressed down for a shortcut.
+/// AltGr (Right Alt) is excluded because international and custom layouts (including Uzbek)
+/// use AltGr to type characters, not shortcuts.
 fn is_control_or_alt_down() -> bool {
     unsafe {
-        let ctrl_state = GetKeyState(VK_CONTROL.0 as i32);
-        let menu_state = GetKeyState(VK_MENU.0 as i32);
-        (ctrl_state & 0x8000u16 as i16) != 0 || (menu_state & 0x8000u16 as i16) != 0
+        let rmenu_down = (GetKeyState(VK_RMENU.0 as i32) & 0x8000u16 as i16) != 0;
+        if rmenu_down {
+            // AltGr (Right Alt) is actively used to produce valid characters, do not treat as shortcut
+            return false;
+        }
+
+        let lctrl = (GetKeyState(VK_LCONTROL.0 as i32) & 0x8000u16 as i16) != 0;
+        let rctrl = (GetKeyState(VK_RCONTROL.0 as i32) & 0x8000u16 as i16) != 0;
+        let lmenu = (GetKeyState(VK_LMENU.0 as i32) & 0x8000u16 as i16) != 0;
+
+        lctrl || rctrl || lmenu
     }
 }
 
@@ -1171,7 +1152,7 @@ fn map_special_key(vk: VIRTUAL_KEY) -> Option<SpecialKey> {
     }
 }
 
-/// Translate virtual key and scan code to a Unicode character.
+/// Translate virtual key and scan code to a Unicode character across all keyboard layouts.
 fn vk_to_unicode(vk: VIRTUAL_KEY, scan_code: u32) -> Option<char> {
     let mut key_state = [0u8; 256];
     let ok = unsafe { GetKeyboardState(&mut key_state) };
@@ -1219,10 +1200,66 @@ fn vk_to_unicode(vk: VIRTUAL_KEY, scan_code: u32) -> Option<char> {
         count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 0, hkl) };
     }
 
-    if count == 1 {
+    // Fallback 1: Extract device layout from HIWORD of hkl (e.g. 0x04090443 for Uzbek Latin in Windows).
+    // In Windows, when input language is Uzbek Latin (0x0443), the composite layout handle
+    // is 0x04090443, which is not registered in user32's internal HKL table of background processes,
+    // causing ToUnicodeEx to return 0. Extracting the layout HIWORD (0x0409) resolves this completely!
+    if count == 0 {
+        let hi = (hkl.0 as usize >> 16) & 0xFFFF;
+        if hi != 0 {
+            let sub_hkl = HKL(((hi << 16) | hi) as *mut _);
+            count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, sub_hkl) };
+            if count == 0 {
+                count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 0, sub_hkl) };
+            }
+        }
+    }
+
+    // Fallback 2: Thread's own keyboard layout
+    if count == 0 {
+        let thread_hkl = unsafe { GetKeyboardLayout(0) };
+        if thread_hkl != hkl {
+            count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, thread_hkl) };
+            if count == 0 {
+                count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 0, thread_hkl) };
+            }
+        }
+    }
+
+    // Fallback 3: Standard US QWERTY layout (0x04090409)
+    if count == 0 {
+        let us_hkl = HKL(0x04090409 as *mut _);
+        count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 4, us_hkl) };
+        if count == 0 {
+            count = unsafe { ToUnicodeEx(vk.0 as u32, scan_code, &key_state, &mut buffer, 0, us_hkl) };
+        }
+    }
+
+    // Handle normal characters (count == 1) and dead keys (count == -1, e.g. apostrophe / accents on international layouts)
+    if count == 1 || count == -1 {
         char::from_u32(buffer[0] as u32)
+    } else if count > 1 {
+        // Multi-character sequence (e.g. combined dead key + base letter)
+        char::from_u32(buffer[(count - 1) as usize] as u32)
     } else {
-        None
+        // Ultimate fallback for physical apostrophe / backtick keys if unmapped in active layout
+        match vk {
+            VK_OEM_7 => {
+                if (key_state[VK_SHIFT.0 as usize] & 0x80) != 0 {
+                    Some('"')
+                } else {
+                    Some('\'')
+                }
+            }
+            VK_OEM_3 => {
+                if (key_state[VK_SHIFT.0 as usize] & 0x80) != 0 {
+                    Some('~')
+                } else {
+                    Some('`')
+                }
+            }
+            _ => None,
+        }
     }
 }
 

@@ -118,3 +118,34 @@ fn test_excluded_apps_management() {
     let running = harfiy_platform::scan_running_apps();
     println!("Scanned running GUI apps count: {}", running.len());
 }
+
+#[cfg(windows)]
+#[test]
+fn test_windows_uzbek_latin_layout_translation() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        ToUnicodeEx, HKL, VK_OEM_7, VK_S,
+    };
+
+    let key_state = [0u8; 256];
+    let mut buffer = [0u16; 8];
+
+    // Uzbek Latin HKL in Windows composite identifier: 0x04090443
+    let uz_hkl = HKL(0x04090443 as *mut _);
+
+    // Direct call with unmapped composite HKL in background process fails:
+    let count_direct = unsafe { ToUnicodeEx(VK_S.0 as u32, 0x1F, &key_state, &mut buffer, 4, uz_hkl) };
+    assert_eq!(count_direct, 0);
+
+    // But extracting the layout HIWORD (0x0409) resolves to US QWERTY:
+    let hi = (uz_hkl.0 as usize >> 16) & 0xFFFF;
+    assert_eq!(hi, 0x0409);
+    let sub_hkl = HKL(((hi << 16) | hi) as *mut _);
+    let count_fallback = unsafe { ToUnicodeEx(VK_S.0 as u32, 0x1F, &key_state, &mut buffer, 4, sub_hkl) };
+    assert_eq!(count_fallback, 1);
+    assert_eq!(char::from_u32(buffer[0] as u32), Some('s'));
+
+    // Test quote key VK_OEM_7
+    let count_quote = unsafe { ToUnicodeEx(VK_OEM_7.0 as u32, 0x28, &key_state, &mut buffer, 4, sub_hkl) };
+    assert_eq!(count_quote, 1);
+    assert_eq!(char::from_u32(buffer[0] as u32), Some('\''));
+}
