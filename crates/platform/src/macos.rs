@@ -459,11 +459,11 @@ unsafe extern "C" fn macos_event_tap_callback(
         return event;
     }
 
-    // Do not interfere if Command, Control, or Option (Alt) modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C)
+    // Do not interfere if Command or Control modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C).
+    // Note: Option (Alternate) is intentionally NOT blocked because on macOS international and
+    // custom layouts (e.g. Uzbek Latin on macOS), Option is used to type characters and diacritics.
     let flags = CGEventGetFlags(event);
-    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate))
-        != 0
-    {
+    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl)) != 0 {
         return event;
     }
 
@@ -623,6 +623,62 @@ pub fn pick_executable_dialog() -> Option<String> {
         }
     }
     None
+}
+
+/// Open the native macOS file chooser to pick one file.
+/// The type filter is not applied here; an unsupported file is reported by the caller.
+pub fn pick_file_dialog(
+    title: &str,
+    _filter_name: &str,
+    _extensions: &[&str],
+) -> Option<std::path::PathBuf> {
+    let script = format!(
+        "try\nreturn POSIX path of (choose file with prompt \"{}\")\non error\nreturn \"\"\nend try",
+        applescript_quote(title)
+    );
+    run_osascript_path(&script)
+}
+
+/// Escape text for use inside an AppleScript string literal.
+fn applescript_quote(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn run_osascript_path(script: &str) -> Option<std::path::PathBuf> {
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let chosen = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!chosen.is_empty()).then(|| std::path::PathBuf::from(chosen))
+}
+
+/// Open the native macOS Save As panel, pre-filled with `default_name` in `initial_dir`.
+/// Returns `None` if the user cancels.
+pub fn pick_save_file_dialog(
+    title: &str,
+    initial_dir: Option<&std::path::Path>,
+    default_name: &str,
+) -> Option<std::path::PathBuf> {
+    let location = initial_dir
+        .map(|d| {
+            format!(
+                " default location (POSIX file \"{}\")",
+                applescript_quote(&d.to_string_lossy())
+            )
+        })
+        .unwrap_or_default();
+    let script = format!(
+        "try\nreturn POSIX path of (choose file name with prompt \"{}\" default name \"{}\"{})\non error\nreturn \"\"\nend try",
+        applescript_quote(title),
+        applescript_quote(default_name),
+        location
+    );
+    run_osascript_path(&script)
 }
 
 static GAME_MODE_ENABLED: AtomicBool = AtomicBool::new(true);

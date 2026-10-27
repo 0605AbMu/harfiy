@@ -1,6 +1,6 @@
 [package]
 name = "harfiy-daemon"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "Background daemon and CLI runner for Harfiy"
@@ -12,6 +12,7 @@ name = "harfiy"
 path = "src/main.rs"
 
 [dependencies]
+harfiy-docs = { path = "../docs" }
 harfiy-engine = { path = "../engine" }
 harfiy-platform = { path = "../platform" }
 harfiy-tray = { path = "../tray" }
@@ -21,6 +22,7 @@ toml = "0.8"
 directories = "5"
 ctrlc = "3.4"
 open = "5.4.5"
+log = "0.4"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

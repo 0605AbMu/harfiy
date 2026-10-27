@@ -41,6 +41,7 @@ O‘zbekiston Respublikasining yangilangan lotin alifbosi islohotiga ko‘ra, qo
 - 🎮 **O‘yin va To‘liq Ekran Rejimi (Game Mode):** To‘liq ekranli o‘yinlar yoki maxsus dasturlar ochilganda klaviatura ushlab qolinmaydi.
 - 🚫 **Istisno Dasturlar (Excluded Apps):** Parol kiritish yoki maxsus kod muharrirlarini konvertatsiyadan istisno qilish imkoniyati.
 - 🎛️ **Tezkor Boshqaruv:** `Ctrl + Shift + U` orqali pauza/faollashtirish, `Ctrl + Alt + U` orqali belgilangan matnni bir zumda o‘girish.
+- 📄 **Faylni O‘girish:** Tray menyusidagi **Faylni o‘girish...** orqali bitta faylni butunlay o‘girish mumkin: `.docx` `.xlsx` `.pptx` `.odt` `.ods` `.odp` `.rtf` `.html` va oddiy matn fayllari (`.txt` `.md` `.csv` `.srt` ...). Faqat matn o‘zgaradi, shrift, jadval, rasm va formatlash saqlanadi. Uzoq davom etsa, progress oynasi ko‘rinadi (undan **Bekor qilish** mumkin). O‘girish tugagach Explorer saqlash oynasi ochiladi (`nom.harfiy.docx` nomi bilan taklif qilinadi). Asl fayl hech qachon o‘zgarmaydi va uning ustiga yozib bo‘lmaydi. Fayl turi kengaytmasiga emas, haqiqiy mazmuniga qarab tekshiriladi; parol bilan himoyalangan va eski `.doc`/`.xls`/`.ppt` formatlari qo‘llab-quvvatlanmaydi.
 - 🪶 **Yengil Vazn:** Xotira sarfi < 8 MB RAM, fayl hajmi atigi ~1.1 MB.
 
 ---

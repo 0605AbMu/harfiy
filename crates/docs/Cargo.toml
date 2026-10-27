@@ -1,0 +1,12 @@
+[package]
+name = "harfiy-docs"
+version = "1.1.0"
+edition = "2021"
+authors = ["Abdumannon Shamsiyev"]
+description = "Converts documents and plain text files to the new Uzbek Latin orthography for Harfiy"
+license = "MIT"
+repository = "https://github.com/0605AbMu/harfiy"
+
+[dependencies]
+harfiy-engine = { path = "../engine" }
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

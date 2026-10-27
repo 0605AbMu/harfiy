@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #endif
 
 #ifndef MyBinaryDir
@@ -60,6 +60,9 @@ Name: "{userdesktop}\Harfiy"; Filename: "{app}\harfiy.exe"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Harfiy"; ValueData: """{app}\harfiy.exe"""; Flags: uninsdeletevalue; Tasks: autostart
+; Windows Event Log registration (Event Viewer)
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Services\EventLog\Application\Harfiy"; ValueType: expandsz; ValueName: "EventMessageFile"; ValueData: "{sys}\netmsg.dll"; Flags: uninsdeletekey; Check: IsAdminLoggedOn
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Services\EventLog\Application\Harfiy"; ValueType: dword; ValueName: "TypesSupported"; ValueData: 7; Flags: uninsdeletekey; Check: IsAdminLoggedOn
 
 [Run]
 Filename: "{app}\harfiy.exe"; Description: "Harfiy dasturini ishga tushirish"; Flags: nowait postinstall skipifsilent

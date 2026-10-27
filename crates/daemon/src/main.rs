@@ -4,6 +4,7 @@
 //! Real-time Uzbek Latin orthography conversion engine.
 
 mod config;
+mod convert_file;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,11 +48,18 @@ enum Commands {
     Status,
     /// Stop running daemon instance
     Stop,
+    /// View recent OS error and event logs
+    Logs {
+        /// Number of recent log events to show
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 fn main() {
     harfiy_platform::init_dpi_awareness();
     harfiy_platform::attach_parent_console();
+    let _ = harfiy_platform::init_os_logger(log::LevelFilter::Info);
     let cli = Cli::parse();
 
     match cli.command {
@@ -67,13 +75,35 @@ fn main() {
             match harfiy_platform::stop_running_daemon() {
                 Ok(true) => {
                     println!("🛑 Harfiy xizmati muvaffaqiyatli to'xtatildi.");
+                    log::info!("Harfiy xizmati muvaffaqiyatli to'xtatildi.");
                 }
                 Ok(false) => {
                     println!("ℹ️ Fonda ishlayotgan Harfiy jarayoni topilmadi.");
                 }
                 Err(e) => {
-                    eprintln!("Xatolik: Jarayonni to'xtatib bo'lmadi: {}", e);
+                    log::error!("Xatolik: Jarayonni to'xtatib bo'lmadi: {}", e);
                 }
+            }
+        }
+        Some(Commands::Logs { limit }) => {
+            let records = harfiy_platform::query_os_logs(limit);
+            if records.is_empty() {
+                println!("ℹ️ Harfiy bo'yicha OS log tizimida hodisalar topilmadi.");
+            } else {
+                println!("📋 Harfiy OS hodisalar jurnali (So'nggi {} ta yozuv):", records.len());
+                println!("{:-<70}", "");
+                for rec in records {
+                    let icon = match rec.level.as_str() {
+                        "ERROR" => "❌",
+                        "WARN" => "⚠️",
+                        _ => "ℹ️",
+                    };
+                    println!(
+                        "{} [{}] [{}] (ID: {}) {}",
+                        icon, rec.time, rec.level, rec.event_id, rec.message
+                    );
+                }
+                println!("{:-<70}", "");
             }
         }
         Some(Commands::Start { no_tray }) => {
@@ -100,41 +130,57 @@ fn perform_quick_convert(
     tray_controller: Option<&TrayController>,
     conversions_counter: &Arc<AtomicU64>,
 ) {
+    let initial_text = harfiy_platform::get_clipboard_text();
+
+    // Trigger synthetic copy of the currently selected text
     harfiy_platform::emit_copy();
-    thread::sleep(Duration::from_millis(60));
 
-    if let Some(text) = harfiy_platform::get_clipboard_text() {
-        if !text.is_empty() {
-            let (converted, count) = harfiy_engine::convert_text(
-                &text,
-                app_config.enable_ng,
-                app_config.smart_apostrophe,
-            );
-            if count > 0 && converted != text {
-                harfiy_platform::set_clipboard_text(&converted);
-                harfiy_platform::emit_paste();
-
-                let new_total =
-                    conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
-                app_config.total_conversions = new_total;
-                let _ = app_config.save();
-
-                if let Some(tray) = tray_controller {
-                    tray.update_stats(new_total);
-                }
-
-                harfiy_platform::show_custom_hud(
-                    &format!("Matn o'girildi ({} ta harf)", count),
-                    true,
-                );
-                println!(
-                    "Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.",
-                    count
-                );
-            } else {
-                harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
+    // Poll the clipboard for up to 300ms so slower targets (Word, browsers) have time to
+    // process the copy. If it never changes (e.g. the selection equals the old clipboard),
+    // fall back to whatever text is on the clipboard now.
+    let mut text = None;
+    for _ in 0..10 {
+        thread::sleep(Duration::from_millis(30));
+        if let Some(current) = harfiy_platform::get_clipboard_text() {
+            if !current.is_empty() && Some(&current) != initial_text.as_ref() {
+                text = Some(current);
+                break;
             }
         }
+    }
+    let text = match text.or_else(harfiy_platform::get_clipboard_text) {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            harfiy_platform::show_custom_hud("Matn tanlanmagan", false);
+            return;
+        }
+    };
+
+    let (converted, count) = harfiy_engine::convert_text(
+        &text,
+        app_config.enable_ng,
+        app_config.smart_apostrophe,
+    );
+    if count > 0 && converted != text {
+        harfiy_platform::set_clipboard_text(&converted);
+        harfiy_platform::emit_paste();
+
+        let new_total =
+            conversions_counter.fetch_add(count as u64, Ordering::SeqCst) + (count as u64);
+        app_config.total_conversions = new_total;
+        let _ = app_config.save();
+
+        if let Some(tray) = tray_controller {
+            tray.update_stats(new_total);
+        }
+
+        harfiy_platform::show_custom_hud(&format!("Matn o'girildi ({} ta harf)", count), true);
+        println!(
+            "Tezkor matn o'girish bajarildi: {} ta harf o'zgartirildi.",
+            count
+        );
+    } else {
+        harfiy_platform::show_custom_hud("O'zgartiriladigan harflar topilmadi", false);
     }
 }
 
@@ -144,6 +190,7 @@ fn run_daemon(no_tray: bool) {
         Some(guard) => guard,
         None => {
             println!("Harfiy allaqachon fonda ishlamoqda. Dasturning faqat bitta nusxasi ishlashi mumkin.");
+            log::warn!("Harfiy allaqachon fonda ishlamoqda. Boshqa nusxa ishga tushirilmadi.");
             return;
         }
     };
@@ -213,7 +260,7 @@ fn run_daemon(no_tray: bool) {
             });
 
             if let Err(e) = res {
-                eprintln!("Klaviatura kiritishini ushlashda xatolik: {}", e);
+                log::error!("Klaviatura kiritishini ushlashda xatolik: {}", e);
             }
             is_running_worker.store(false, Ordering::SeqCst);
         })
@@ -240,7 +287,7 @@ fn run_daemon(no_tray: bool) {
                 });
 
                 if let Err(e) = res {
-                    eprintln!("macOS interceptor xatoligi: {}", e);
+                    log::error!("macOS interceptor xatoligi: {}", e);
                 }
 
                 if !is_running_worker.load(Ordering::SeqCst)
@@ -273,7 +320,7 @@ fn run_daemon(no_tray: bool) {
             });
 
             if let Err(e) = res {
-                eprintln!("Error running Linux interceptor: {}", e);
+                log::error!("Error running Linux interceptor: {}", e);
             }
             is_running_worker.store(false, Ordering::SeqCst);
         })
@@ -300,7 +347,7 @@ fn run_daemon(no_tray: bool) {
         ) {
             Ok(controller) => (Some(controller), None),
             Err(e) => {
-                eprintln!(
+                log::warn!(
                     "Tizim paneli (System Tray) yaratilmadi: {}. Konsol rejimida davom etilmoqda.",
                     e
                 );
@@ -318,6 +365,7 @@ fn run_daemon(no_tray: bool) {
     };
 
     println!("Harfiy muvaffaqiyatli ishga tushdi. To'xtatish uchun Ctrl+C bosing.");
+    log::info!("Harfiy v{} muvaffaqiyatli ishga tushdi.", current_ver);
 
     let mut last_scan = std::time::Instant::now();
     let mut last_perm_check = std::time::Instant::now();
@@ -415,6 +463,15 @@ fn run_daemon(no_tray: bool) {
                             &mut app_config,
                             tray_controller.as_ref(),
                             &conversions_counter,
+                        );
+                    }
+                    TrayCommand::ConvertFile => {
+                        convert_file::start(
+                            harfiy_docs::ConvertOptions {
+                                enable_ng: app_config.enable_ng,
+                                smart_apostrophe: app_config.smart_apostrophe,
+                            },
+                            Arc::clone(&conversions_counter),
                         );
                     }
                     TrayCommand::ToggleNg(enabled) => {
@@ -609,5 +666,6 @@ fn run_daemon(no_tray: bool) {
     }
 
     println!("Harfiy to'xtatildi.");
+    log::info!("Harfiy xizmati to'xtatildi.");
     std::process::exit(0);
 }

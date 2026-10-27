@@ -66,6 +66,7 @@ pub enum TrayError {
 pub enum TrayCommand {
     ToggleActive(bool),
     QuickConvertText,
+    ConvertFile,
     ToggleNg(bool),
     ToggleAutostart(bool),
     ToggleGameMode(bool),
@@ -241,6 +242,7 @@ pub struct TrayController {
     convert_hotkey: Option<HotKey>,
     active_item: CheckMenuItem,
     convert_item: IconMenuItem,
+    convert_file_item: IconMenuItem,
     ng_item: CheckMenuItem,
     autostart_item: CheckMenuItem,
     game_mode_item: CheckMenuItem,
@@ -342,6 +344,15 @@ impl TrayController {
             convert_accelerator,
         );
 
+        // 2b. Convert a whole file (document or plain text) picked from disk
+        let convert_file_item = IconMenuItem::with_id(
+            "convert_file",
+            "Faylni o'girish...",
+            true,
+            make_menu_icon(MENU_FOLDER_16),
+            None,
+        );
+
         // 3. Option checkboxes
         let ng_item = CheckMenuItem::new("'ng' -> 'ñ' qoidasi", true, initial_ng, None);
         let autostart_item =
@@ -426,6 +437,7 @@ impl TrayController {
             .append_items(&[
                 &active_item,
                 &convert_item,
+                &convert_file_item,
                 &sep1,
                 &ng_item,
                 &autostart_item,
@@ -491,6 +503,7 @@ impl TrayController {
             convert_hotkey,
             active_item,
             convert_item,
+            convert_file_item,
             ng_item,
             autostart_item,
             game_mode_item,
@@ -583,6 +596,8 @@ impl TrayController {
                 return Some(TrayCommand::ToggleActive(new_state));
             } else if event.id == self.convert_item.id() {
                 return Some(TrayCommand::QuickConvertText);
+            } else if event.id == self.convert_file_item.id() {
+                return Some(TrayCommand::ConvertFile);
             } else if event.id == self.ng_item.id() {
                 let new_state = !self.enable_ng.load(Ordering::SeqCst);
                 self.enable_ng.store(new_state, Ordering::SeqCst);
@@ -707,7 +722,12 @@ impl StandaloneHotKey {
             .register(hotkey)
             .map_err(|e| TrayError::HotKeyInit(e.to_string()))?;
 
-        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok();
+        let convert_hotkey: Option<HotKey> = convert_hotkey_str.parse().ok().or_else(|| {
+            Some(HotKey::new(
+                Some(Modifiers::CONTROL | Modifiers::ALT),
+                Code::KeyU,
+            ))
+        });
         if let Some(chk) = convert_hotkey {
             let _ = hotkey_manager.register(chk);
         }
