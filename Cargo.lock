@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-daemon"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -760,7 +760,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-docs"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "harfiy-engine",
  "zip",
@@ -768,11 +768,11 @@ dependencies = [
 
 [[package]]
 name = "harfiy-engine"
-version = "1.0.1"
+version = "1.1.0"
 
 [[package]]
 name = "harfiy-ffi"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "harfiy-engine",
  "jni",
@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-platform"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "harfiy-tray"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "global-hotkey",
  "harfiy-engine",
