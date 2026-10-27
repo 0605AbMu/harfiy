@@ -20,7 +20,7 @@ public enum HarfiyAction {
 /// Thread-safe Swift interface wrapping the Rust HarfiyEngine instance.
 public final class HarfiyEngineBridge {
     private var handle: HarfiyEngineHandle?
-    public var isEnableNg: Bool = false
+    public private(set) var isEnableNg: Bool = false
 
     // State machine for pure Swift fallback (when HarfiyCore is not linked)
     private var fallbackPrevChar: Character?
@@ -60,6 +60,9 @@ public final class HarfiyEngineBridge {
 
     /// Dynamically enable or disable 'ng' -> 'ñ' conversion.
     public func setEnableNg(_ enable: Bool) {
+        // Callers re-apply settings before every keystroke; skip no-op updates so the
+        // engine never drops a pending first character (e.g. "s" waiting for "h").
+        guard enable != isEnableNg else { return }
         self.isEnableNg = enable
         #if canImport(HarfiyCore)
         if let h = handle {

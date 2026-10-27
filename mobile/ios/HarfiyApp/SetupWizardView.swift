@@ -16,6 +16,7 @@ public struct SetupWizardView: View {
     @State private var testInput: String = ""
     @State private var hasTestedSuccessfully: Bool = false
     @State private var isProcessingLiveChange: Bool = false
+    @FocusState private var isTestFieldFocused: Bool
 
     private let engine = HarfiyEngineBridge()
     private let totalSteps = 4
@@ -94,6 +95,14 @@ public struct SetupWizardView: View {
                 }
             }
             .navigationBarHidden(true)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Tayyor") { isTestFieldFocused = false }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Color(hex: "#2563EB"))
+                }
+            }
         }
     }
 
@@ -282,6 +291,9 @@ public struct SetupWizardView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Shu yerda yozib ko‘ring...", text: $testInput)
+                    .focused($isTestFieldFocused)
+                    .submitLabel(.done)
+                    .foregroundColor(Color(hex: "#0F172A"))
                     .padding(14)
                     .background(Color.white)
                     .cornerRadius(12)

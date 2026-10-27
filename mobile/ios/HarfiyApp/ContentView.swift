@@ -76,6 +76,14 @@ public struct ContentView: View {
                 }
             }
             .navigationBarHidden(true)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Tayyor") { isFieldFocused = false }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Color(hex: "#2563EB"))
+                }
+            }
             .sheet(isPresented: $showingWizard) {
                 SetupWizardView(isPresented: $showingWizard)
             }

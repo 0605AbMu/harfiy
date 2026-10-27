@@ -192,6 +192,11 @@ impl HarfiyEngine {
 
     /// Update 'ng' -> 'ñ' rule status dynamically.
     pub fn set_enable_ng(&mut self, enable_ng: bool) {
+        // Mobile frontends re-apply settings before every keystroke; only an actual
+        // rule change may discard the pending character state.
+        if self.config.enable_ng == enable_ng {
+            return;
+        }
         self.config.enable_ng = enable_ng;
         self.reset();
     }
@@ -731,6 +736,23 @@ mod tests {
             KeyAction::Transform {
                 backspaces_count: 1,
                 replacement: "ñ",
+            }
+        );
+    }
+    /// Mobile keyboards re-apply the user's settings before every keystroke.
+    /// Re-applying an unchanged value must not wipe the pending first character.
+    #[test]
+    fn test_reapplying_same_ng_setting_keeps_pending_state() {
+        let mut engine = HarfiyEngine::default();
+
+        engine.set_enable_ng(false);
+        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+        engine.set_enable_ng(false);
+        assert_eq!(
+            engine.process(InputEvent::Char('h')),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "ş",
             }
         );
     }
