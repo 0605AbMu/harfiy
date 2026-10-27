@@ -79,56 +79,73 @@ pub fn match_rule(prev: char, curr: char, enable_ng: bool) -> Option<ConversionM
     }
 }
 
-/// Convert an entire string to the new Uzbek Latin orthography in batch mode.
-/// Returns the converted string along with the number of replacements made.
-pub fn convert_text(input: &str, enable_ng: bool, smart_apostrophe: bool) -> (String, usize) {
-    let mut result = String::with_capacity(input.len());
-    let mut count = 0;
-    let chars: Vec<char> = input.chars().collect();
+/// A single replacement planned by the batch converter: the characters `start..end`
+/// (indices into the input `&[char]`) are replaced by `replacement`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Edit {
+    pub start: usize,
+    pub end: usize,
+    pub replacement: &'static str,
+}
+
+/// Plan every replacement needed to convert `chars` to the new Uzbek Latin orthography.
+///
+/// Edits are returned in ascending order and never overlap. Callers that cannot work on a
+/// plain string (document formats where one word is split across several runs) apply the
+/// edits to their own storage instead of calling `convert_text`.
+pub fn plan_edits(chars: &[char], enable_ng: bool, smart_apostrophe: bool) -> Vec<Edit> {
     let len = chars.len();
+    let mut edits = Vec::new();
     let mut i = 0;
 
     while i < len {
         let curr = chars[i];
-        let next = if i + 1 < len {
-            Some(chars[i + 1])
-        } else {
-            None
-        };
+        let next = chars.get(i + 1).copied();
 
-        let mut matched = false;
-        if let Some(n) = next {
-            if let Some(m) = match_rule(curr, n, enable_ng) {
-                result.push_str(m.replacement);
-                count += 1;
-                i += 2;
-                matched = true;
-            }
+        if let Some(m) = next.and_then(|n| match_rule(curr, n, enable_ng)) {
+            edits.push(Edit {
+                start: i,
+                end: i + 2,
+                replacement: m.replacement,
+            });
+            i += 2;
+            continue;
         }
 
-        if !matched {
-            // Smart apostrophe (hamza / tutuq belgisi)
-            if smart_apostrophe && (curr == '\'' || curr == '`') {
-                let prev_is_letter = if i > 0 {
-                    chars[i - 1].is_alphabetic()
-                } else {
-                    false
-                };
-                let next_is_letter = next.map(|c| c.is_alphabetic()).unwrap_or(false);
-                if prev_is_letter && next_is_letter {
-                    result.push('ʻ'); // U+02BB modifier letter turned comma (official tutuq belgisi)
-                    count += 1;
-                    i += 1;
-                    continue;
-                }
+        // Smart apostrophe (hamza / tutuq belgisi)
+        if smart_apostrophe && (curr == '\'' || curr == '`') {
+            let prev_is_letter = i > 0 && chars[i - 1].is_alphabetic();
+            let next_is_letter = next.map(|c| c.is_alphabetic()).unwrap_or(false);
+            if prev_is_letter && next_is_letter {
+                edits.push(Edit {
+                    start: i,
+                    end: i + 1,
+                    replacement: "ʻ", // U+02BB modifier letter turned comma (official tutuq belgisi)
+                });
             }
-
-            result.push(curr);
-            i += 1;
         }
+        i += 1;
     }
 
-    (result, count)
+    edits
+}
+
+/// Convert an entire string to the new Uzbek Latin orthography in batch mode.
+/// Returns the converted string along with the number of replacements made.
+pub fn convert_text(input: &str, enable_ng: bool, smart_apostrophe: bool) -> (String, usize) {
+    let chars: Vec<char> = input.chars().collect();
+    let edits = plan_edits(&chars, enable_ng, smart_apostrophe);
+
+    let mut result = String::with_capacity(input.len());
+    let mut pos = 0;
+    for edit in &edits {
+        result.extend(&chars[pos..edit.start]);
+        result.push_str(edit.replacement);
+        pos = edit.end;
+    }
+    result.extend(&chars[pos..]);
+
+    (result, edits.len())
 }
 
 #[cfg(test)]
@@ -187,5 +204,25 @@ mod tests {
         let (out, count) = convert_text(input, false, true);
         assert_eq!(out, "Şahar köçasida çoyxona va ğişt bor. Aʻlo darajada!");
         assert_eq!(count, 7);
+    }
+
+    #[test]
+    fn test_plan_edits_positions() {
+        let chars: Vec<char> = "bosh o'rin a'lo".chars().collect();
+        let edits = plan_edits(&chars, false, true);
+        assert_eq!(
+            edits,
+            vec![
+                Edit { start: 2, end: 4, replacement: "ş" },
+                Edit { start: 5, end: 7, replacement: "ö" },
+                Edit { start: 12, end: 13, replacement: "ʻ" },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_plan_edits_empty_when_nothing_to_convert() {
+        let chars: Vec<char> = "salom dunyo".chars().collect();
+        assert!(plan_edits(&chars, false, true).is_empty());
     }
 }
