@@ -559,6 +559,50 @@ pub fn pick_executable_dialog() -> Option<String> {
     None
 }
 
+/// Open the native Windows file dialog to pick one file.
+/// `extensions` are lowercase file extensions without the dot, shown as the first filter.
+pub fn pick_file_dialog(
+    title: &str,
+    filter_name: &str,
+    extensions: &[&str],
+) -> Option<std::path::PathBuf> {
+    use windows::core::{HSTRING, PCWSTR, PWSTR};
+
+    // Filter list: "<name>\0*.a;*.b\0<name>\0*.*\0\0"
+    let patterns = extensions
+        .iter()
+        .map(|e| format!("*.{}", e))
+        .collect::<Vec<_>>()
+        .join(";");
+    let mut filter: Vec<u16> = Vec::new();
+    for part in [filter_name, patterns.as_str(), "Barcha fayllar (*.*)", "*.*"] {
+        filter.extend(part.encode_utf16());
+        filter.push(0);
+    }
+    filter.push(0);
+
+    let title_w = HSTRING::from(title);
+    let mut file_buf = vec![0u16; 32 * 1024];
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST,
+        lpstrTitle: PCWSTR(title_w.as_ptr()),
+        ..Default::default()
+    };
+
+    if !unsafe { GetOpenFileNameW(&mut ofn) }.as_bool() {
+        return None;
+    }
+
+    let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+    let chosen = String::from_utf16_lossy(&file_buf[..len]);
+    (!chosen.is_empty()).then(|| std::path::PathBuf::from(chosen))
+}
+
 const AUTOSTART_SUBKEY: windows::core::PCWSTR =
     windows::core::w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const AUTOSTART_NAME: windows::core::PCWSTR = windows::core::w!("Harfiy");
