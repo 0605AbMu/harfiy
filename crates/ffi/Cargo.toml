@@ -1,6 +1,6 @@
 [package]
 name = "harfiy-ffi"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "C-ABI and JNI mobile bindings for Harfiy Engine (iOS & Android)"
