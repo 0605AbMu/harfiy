@@ -5,6 +5,7 @@
 //! - Synthetic key emission (SendInput, CGEventPost, uinput virtual device)
 
 pub mod mock;
+pub mod os_log;
 
 #[cfg(windows)]
 pub mod windows;
@@ -75,6 +76,10 @@ pub trait KeyboardEmitter: Send + Sync {
 }
 
 pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
+pub use os_log::{
+    clear_recent_logs, get_recent_logs, init_os_logger, log_error, log_info, log_to_os, log_warn,
+    query_os_logs, LogEntry, LogLevel, OsLogger, OsLogRecord,
+};
 
 #[cfg(windows)]
 pub use self::windows::{
