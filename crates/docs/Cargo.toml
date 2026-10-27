@@ -1,6 +1,6 @@
 [package]
 name = "harfiy-docs"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Abdumannon Shamsiyev"]
 description = "Converts documents and plain text files to the new Uzbek Latin orthography for Harfiy"

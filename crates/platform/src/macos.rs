@@ -141,8 +141,6 @@ const kCGNullWindowID: u32 = 0;
 const kCGEventFlagMaskCommand: u64 = 0x00100000;
 #[allow(non_upper_case_globals)]
 const kCGEventFlagMaskControl: u64 = 0x00040000;
-#[allow(non_upper_case_globals)]
-const kCGEventFlagMaskAlternate: u64 = 0x00080000;
 
 /// Synthetic keyboard event emitter for macOS using CoreGraphics events.
 #[derive(Debug, Clone, Default)]
