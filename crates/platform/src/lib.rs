@@ -157,15 +157,73 @@ pub fn get_clipboard_text() -> Option<String> {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn set_clipboard_text(_text: &str) -> bool {
+pub fn set_clipboard_text(text: &str) -> bool {
+    // 1. Try Wayland wl-copy
+    if let Ok(mut child) = std::process::Command::new("wl-copy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            if stdin.write_all(text.as_bytes()).is_ok() {
+                drop(stdin);
+                if child.wait().map(|s| s.success()).unwrap_or(false) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 2. Try X11 xclip
+    if let Ok(mut child) = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            if stdin.write_all(text.as_bytes()).is_ok() {
+                drop(stdin);
+                if child.wait().map(|s| s.success()).unwrap_or(false) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 3. Try X11 xsel
+    if let Ok(mut child) = std::process::Command::new("xsel")
+        .args(["--clipboard", "--input"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            if stdin.write_all(text.as_bytes()).is_ok() {
+                drop(stdin);
+                if child.wait().map(|s| s.success()).unwrap_or(false) {
+                    return true;
+                }
+            }
+        }
+    }
+
     false
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn emit_copy() {}
+pub fn emit_copy() {
+    let _ = std::process::Command::new("xdotool")
+        .args(["key", "--clearmodifiers", "ctrl+c"])
+        .status();
+}
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn emit_paste() {}
+pub fn emit_paste() {
+    let _ = std::process::Command::new("xdotool")
+        .args(["key", "--clearmodifiers", "ctrl+v"])
+        .status();
+}
 
 #[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_foreground_fullscreen() -> bool {
@@ -271,6 +329,45 @@ pub fn stop_running_daemon() -> Result<bool, PlatformError> {
         } else {
             return Err(PlatformError::Other(format!(
                 "Failed to send SIGTERM to process {}",
+    // 1. Try Wayland wl-paste
+    if let Ok(output) = std::process::Command::new("wl-paste").output() {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
+    // 2. Try X11 xclip
+    if let Ok(output) = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard", "-o"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
+    // 3. Try X11 xsel
+    if let Ok(output) = std::process::Command::new("xsel")
+        .args(["--clipboard", "--output"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
                 pid
             )));
         }
