@@ -9,6 +9,9 @@ pub mod mock;
 #[cfg(windows)]
 pub mod windows;
 
+#[cfg(windows)]
+mod windows_ui;
+
 #[cfg(target_os = "macos")]
 pub mod macos;
 
@@ -75,13 +78,17 @@ pub use mock::{MockEmittedEvent, MockEmitter, MockInterceptor, MockPlatform};
 
 #[cfg(windows)]
 pub use self::windows::{
-    acquire_single_instance_lock, attach_parent_console, emit_copy, emit_paste, get_clipboard_text,
-    get_running_daemon_pid, init_dpi_awareness, is_autostart_enabled, is_current_app_excluded,
-    is_foreground_fullscreen, is_game_mode, pick_executable_dialog, pump_messages,
-    scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
-    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, stop_running_daemon,
-    SingleInstanceGuard, WindowsEmitter, WindowsInterceptor, HARFIY_MAGIC_FLAG,
+    acquire_single_instance_lock, attach_parent_console, emit_copy, emit_paste,
+    get_clipboard_text, get_running_daemon_pid, init_dpi_awareness, is_autostart_enabled,
+    is_current_app_excluded, is_foreground_fullscreen, is_game_mode, pick_executable_dialog,
+    pick_file_dialog, pump_messages, scan_running_apps, set_autostart, set_clipboard_text,
+    set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
+    show_status_hud, stop_running_daemon, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor,
+    HARFIY_MAGIC_FLAG,
 };
+
+#[cfg(windows)]
+pub use self::windows_ui::{pick_save_file_dialog, ProgressWindow};
 
 #[cfg(not(windows))]
 pub fn init_dpi_awareness() {}
@@ -90,9 +97,10 @@ pub fn init_dpi_awareness() {}
 pub use self::macos::{
     attach_parent_console, emit_copy, emit_paste, get_clipboard_text, is_autostart_enabled,
     is_current_app_excluded, is_foreground_fullscreen, is_game_mode, open_accessibility_settings,
-    pick_executable_dialog, scan_running_apps, set_autostart, set_clipboard_text,
-    set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
-    show_status_hud, MacOsEmitter, MacOsInterceptor, HARFIY_MAGIC_FLAG,
+    pick_executable_dialog, pick_file_dialog, pick_save_file_dialog,
+    scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
+    show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, MacOsEmitter,
+    MacOsInterceptor, HARFIY_MAGIC_FLAG,
 };
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -151,8 +159,157 @@ pub fn set_autostart(_enabled: bool) -> Result<(), PlatformError> {
     Ok(())
 }
 
+/// Open a native Save As dialog (zenity or kdialog), pre-filled with `default_name` in
+/// `initial_dir`. Returns `None` if the user cancels.
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn pick_save_file_dialog(
+    title: &str,
+    initial_dir: Option<&std::path::Path>,
+    default_name: &str,
+) -> Option<std::path::PathBuf> {
+    use std::process::Command;
+
+    let start = initial_dir
+        .map(|d| d.join(default_name))
+        .unwrap_or_else(|| std::path::PathBuf::from(default_name));
+
+    let output = Command::new("zenity")
+        .arg("--file-selection")
+        .arg("--save")
+        .arg("--confirm-overwrite")
+        .arg(format!("--title={}", title))
+        .arg(format!("--filename={}", start.display()))
+        .output()
+        .or_else(|_| {
+            Command::new("kdialog")
+                .arg("--getsavefilename")
+                .arg(&start)
+                .arg("--title")
+                .arg(title)
+                .output()
+        })
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let chosen = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!chosen.is_empty()).then(|| std::path::PathBuf::from(chosen))
+}
+
+/// Progress indicator for long operations. Outside Windows there is no floating window: the
+/// status line is shown through the notification HUD whenever it changes, and the operation
+/// cannot be cancelled from here.
+#[cfg(not(windows))]
+pub struct ProgressWindow {
+    last_status: std::sync::Mutex<String>,
+}
+
+#[cfg(not(windows))]
+impl ProgressWindow {
+    pub fn open(_title: &str) -> Self {
+        Self::open_after(_title, std::time::Duration::ZERO)
+    }
+
+    pub fn open_after(_title: &str, _delay: std::time::Duration) -> Self {
+        Self {
+            last_status: std::sync::Mutex::new(String::new()),
+        }
+    }
+
+    pub fn update(&self, _fraction: Option<f32>, status: &str, detail: &str) {
+        let message = if detail.is_empty() {
+            status.to_string()
+        } else {
+            format!("{} - {}", status, detail)
+        };
+        if let Ok(mut last) = self.last_status.lock() {
+            if *last != message {
+                show_custom_hud(&message, true);
+                *last = message;
+            }
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// Open a native file picker (zenity or kdialog) and return the chosen path.
+/// `extensions` are lowercase file extensions without the dot, used as a filter hint.
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn pick_file_dialog(
+    title: &str,
+    filter_name: &str,
+    extensions: &[&str],
+) -> Option<std::path::PathBuf> {
+    use std::process::Command;
+
+    let patterns: Vec<String> = extensions.iter().map(|e| format!("*.{}", e)).collect();
+
+    let output = Command::new("zenity")
+        .arg("--file-selection")
+        .arg(format!("--title={}", title))
+        .arg(format!("--file-filter={} | {}", filter_name, patterns.join(" ")))
+        .output()
+        .or_else(|_| {
+            Command::new("kdialog")
+                .arg("--getopenfilename")
+                .arg(".")
+                .arg(patterns.join(" "))
+                .arg("--title")
+                .arg(title)
+                .output()
+        })
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let chosen = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!chosen.is_empty()).then(|| std::path::PathBuf::from(chosen))
+}
+
 #[cfg(not(any(windows, target_os = "macos")))]
 pub fn get_clipboard_text() -> Option<String> {
+    // 1. Try Wayland wl-paste
+    if let Ok(output) = std::process::Command::new("wl-paste").output() {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
+    // 2. Try X11 xclip
+    if let Ok(output) = std::process::Command::new("xclip")
+        .args(["-selection", "clipboard", "-o"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
+    // 3. Try X11 xsel
+    if let Ok(output) = std::process::Command::new("xsel")
+        .args(["--clipboard", "--output"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if !s.is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -329,45 +486,6 @@ pub fn stop_running_daemon() -> Result<bool, PlatformError> {
         } else {
             return Err(PlatformError::Other(format!(
                 "Failed to send SIGTERM to process {}",
-    // 1. Try Wayland wl-paste
-    if let Ok(output) = std::process::Command::new("wl-paste").output() {
-        if output.status.success() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                if !s.is_empty() {
-                    return Some(s);
-                }
-            }
-        }
-    }
-
-    // 2. Try X11 xclip
-    if let Ok(output) = std::process::Command::new("xclip")
-        .args(["-selection", "clipboard", "-o"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                if !s.is_empty() {
-                    return Some(s);
-                }
-            }
-        }
-    }
-
-    // 3. Try X11 xsel
-    if let Ok(output) = std::process::Command::new("xsel")
-        .args(["--clipboard", "--output"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                if !s.is_empty() {
-                    return Some(s);
-                }
-            }
-        }
-    }
-
                 pid
             )));
         }
