@@ -404,7 +404,37 @@ unsafe extern "system" fn hud_wnd_proc(
 }
 
 static EXCLUDED_APPS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static CACHED_FG_STATUS: Mutex<Option<(isize, bool, Instant)>> = Mutex::new(None);
+static CACHED_FG_STATUS: Mutex<Option<(isize, ForegroundAppFlags, Instant)>> = Mutex::new(None);
+
+/// Browsers whose address bar (and some page fields) inline-autocomplete: after the user types
+/// `s`, the field holds `s[uggestion]` with the suggested tail selected. A plain Backspace then
+/// deletes that selection instead of the `s`, so `sh` would turn into `sş`.
+/// `browser.exe` is Yandex Browser.
+const INLINE_AUTOCOMPLETE_APPS: &[&str] = &[
+    "chrome.exe",
+    "chromium.exe",
+    "msedge.exe",
+    "brave.exe",
+    "opera.exe",
+    "vivaldi.exe",
+    "browser.exe",
+    "arc.exe",
+    "firefox.exe",
+];
+
+/// Throwaway character typed before the backspaces of a transform in inline-autocomplete apps.
+/// Typing it replaces any selected suggestion (or simply appends when nothing is selected), and
+/// one extra Backspace removes it again. Narrow no-break space is a standalone grapheme, so the
+/// Backspace removes exactly this character and nothing before it.
+const SELECTION_GUARD_CHAR: &str = "\u{202F}";
+
+/// Per-window facts about the foreground application, cached for a short time because the
+/// keyboard hook queries them on every keystroke.
+#[derive(Debug, Clone, Copy, Default)]
+struct ForegroundAppFlags {
+    excluded: bool,
+    inline_autocomplete: bool,
+}
 
 /// Update the active list of excluded applications.
 pub fn set_excluded_apps(apps: &[String]) {
@@ -416,36 +446,46 @@ pub fn set_excluded_apps(apps: &[String]) {
 
 /// Check if the currently focused foreground window belongs to an excluded application.
 pub fn is_current_app_excluded() -> bool {
+    foreground_app_flags().excluded
+}
+
+/// Check if the currently focused foreground window belongs to a browser with inline autocomplete.
+fn is_foreground_inline_autocomplete_app() -> bool {
+    foreground_app_flags().inline_autocomplete
+}
+
+fn foreground_app_flags() -> ForegroundAppFlags {
     let fg = unsafe { GetForegroundWindow() };
     if fg.0.is_null() {
-        return false;
+        return ForegroundAppFlags::default();
     }
     let fg_raw = fg.0 as isize;
 
     {
         let cache = CACHED_FG_STATUS.lock().unwrap();
-        if let Some((cached_hwnd, excluded, instant)) = *cache {
+        if let Some((cached_hwnd, flags, instant)) = *cache {
             if cached_hwnd == fg_raw && instant.elapsed() < std::time::Duration::from_millis(200) {
-                return excluded;
+                return flags;
             }
         }
     }
 
     let mut pid = 0u32;
     unsafe { GetWindowThreadProcessId(fg, Some(&mut pid)) };
-    let mut is_excluded = false;
+    let mut flags = ForegroundAppFlags::default();
     if pid != 0 && pid != std::process::id() {
         if let Some(exe) = get_process_name_by_pid(pid) {
             let exe_lower = exe.to_lowercase();
             let guard = EXCLUDED_APPS.lock().unwrap();
-            is_excluded = guard.iter().any(|app| app == &exe_lower);
+            flags.excluded = guard.iter().any(|app| app == &exe_lower);
+            flags.inline_autocomplete = INLINE_AUTOCOMPLETE_APPS.contains(&exe_lower.as_str());
         }
     }
 
     let mut cache = CACHED_FG_STATUS.lock().unwrap();
-    *cache = Some((fg_raw, is_excluded, Instant::now()));
+    *cache = Some((fg_raw, flags, Instant::now()));
 
-    is_excluded
+    flags
 }
 
 /// Retrieve the executable file name for a process ID.
@@ -1057,6 +1097,82 @@ impl KeyboardEmitter for WindowsEmitter {
     }
 }
 
+impl WindowsEmitter {
+    /// Same result as `emit_transform`, but safe against a selected inline-autocomplete
+    /// suggestion: types `SELECTION_GUARD_CHAR` first (replacing the selection, if any) and
+    /// removes it with one extra Backspace before the regular transform.
+    pub fn emit_transform_guarded(
+        &mut self,
+        backspaces_count: usize,
+        replacement: &str,
+    ) -> Result<(), PlatformError> {
+        let inputs = build_guarded_transform_inputs(backspaces_count, replacement);
+
+        // Send all synthetic inputs in one single atomic batch
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != inputs.len() {
+            return Err(PlatformError::SendInputFailed(format!(
+                "Expected to send {} inputs, sent {}",
+                inputs.len(),
+                sent
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+/// Build the input batch: guard char, `backspaces_count + 1` Backspaces, then `replacement`.
+fn build_guarded_transform_inputs(backspaces_count: usize, replacement: &str) -> Vec<INPUT> {
+    let guard_units = SELECTION_GUARD_CHAR.encode_utf16().count();
+    let replacement_units = replacement.encode_utf16().count();
+    let mut inputs =
+        Vec::with_capacity((guard_units + backspaces_count + 1 + replacement_units) * 2);
+
+    push_unicode_inputs(&mut inputs, SELECTION_GUARD_CHAR);
+    push_backspace_inputs(&mut inputs, backspaces_count + 1);
+    push_unicode_inputs(&mut inputs, replacement);
+    inputs
+}
+
+fn push_backspace_inputs(inputs: &mut Vec<INPUT>, count: usize) {
+    for _ in 0..count {
+        for flags in [KEYBD_EVENT_FLAGS(0), KEYEVENTF_KEYUP] {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_BACK,
+                        wScan: 0,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+        }
+    }
+}
+
+fn push_unicode_inputs(inputs: &mut Vec<INPUT>, text: &str) {
+    for cu in text.encode_utf16() {
+        for flags in [KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP] {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: cu,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                    },
+                },
+            });
+        }
+    }
+}
+
 /// Windows keyboard hook interceptor using `WH_KEYBOARD_LL`.
 #[derive(Default)]
 pub struct WindowsInterceptor {
@@ -1379,9 +1495,15 @@ unsafe extern "system" fn low_level_keyboard_proc(
                     backspaces_count,
                     replacement,
                 } => {
-                    // Emit backspace(s) and replacement text atomically in one batch
+                    // Emit backspace(s) and replacement text atomically in one batch.
+                    // Browsers may have a selected autocomplete suggestion after the caret,
+                    // which a bare Backspace would delete instead of the typed character.
                     let mut emitter = WindowsEmitter::new();
-                    let _ = emitter.emit_transform(backspaces_count, replacement);
+                    let _ = if is_foreground_inline_autocomplete_app() {
+                        emitter.emit_transform_guarded(backspaces_count, replacement)
+                    } else {
+                        emitter.emit_transform(backspaces_count, replacement)
+                    };
                     // Swallow the current key event so it is not typed
                     return LRESULT(1);
                 }
@@ -1390,4 +1512,50 @@ unsafe extern "system" fn low_level_keyboard_proc(
     }
 
     CallNextHookEx(None, n_code, w_param, l_param)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn describe(input: &INPUT) -> (u16, u16, bool) {
+        let ki = unsafe { input.Anonymous.ki };
+        assert_eq!(ki.dwExtraInfo, HARFIY_MAGIC_FLAG);
+        (ki.wVk.0, ki.wScan, (ki.dwFlags & KEYEVENTF_KEYUP) == KEYEVENTF_KEYUP)
+    }
+
+    #[test]
+    fn test_guarded_transform_types_guard_then_one_extra_backspace() {
+        let inputs = build_guarded_transform_inputs(1, "ş");
+        let events: Vec<_> = inputs.iter().map(describe).collect();
+        let guard = 0x202F;
+        let sh = 'ş' as u16;
+        let back = VK_BACK.0;
+
+        assert_eq!(
+            events,
+            vec![
+                (0, guard, false),
+                (0, guard, true),
+                (back, 0, false),
+                (back, 0, true),
+                (back, 0, false),
+                (back, 0, true),
+                (0, sh, false),
+                (0, sh, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_guarded_instant_undo_restores_original_pair() {
+        let inputs = build_guarded_transform_inputs(1, "sh");
+        let backspaces = inputs
+            .iter()
+            .map(describe)
+            .filter(|&(vk, _, up)| vk == VK_BACK.0 && !up)
+            .count();
+        assert_eq!(backspaces, 2);
+        assert_eq!(inputs.len(), 2 + 4 + 4);
+    }
 }
