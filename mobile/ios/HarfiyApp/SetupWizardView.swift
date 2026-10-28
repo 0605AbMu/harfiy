@@ -20,8 +20,9 @@ public struct SetupWizardView: View {
     @State private var testInput: String = ""
     @State private var hasTestedSuccessfully: Bool = false
     @FocusState private var isTestFieldFocused: Bool
+    /// Created once (@State keeps the first instance); a publisher built in `body` is replaced on every render.
+    @State private var statusPoll = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    private let engine = HarfiyEngineBridge()
     private let totalSteps = 4
 
     public init(isPresented: Binding<Bool>, initialStep: Int = 1) {
@@ -117,13 +118,11 @@ public struct SetupWizardView: View {
             .onAppear {
                 refreshKeyboardStatus()
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                refreshKeyboardStatus()
-            }
+            // didBecomeActive also fires after willEnterForeground, so one observer is enough.
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 refreshKeyboardStatus()
             }
-            .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+            .onReceive(statusPoll) { _ in
                 if currentStep == 2 {
                     refreshKeyboardStatus()
                 }

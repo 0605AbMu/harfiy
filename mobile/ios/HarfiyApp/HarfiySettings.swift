@@ -48,7 +48,27 @@ public final class HarfiySettings: ObservableObject {
             return true
         }
 
-        // 2. Check com.apple.keyboard.preferences (iOS system preference suite)
+        // 2. Check AppleKeyboards in standard defaults
+        if let keyList = UserDefaults.standard.object(forKey: "AppleKeyboards") as? [String],
+           keyList.contains(where: { $0.contains(bundlePrefix) }) {
+            return true
+        }
+
+        #if canImport(UIKit)
+        // 3. Check activeInputModes
+        for mode in UITextInputMode.activeInputModes {
+            if let id = mode.value(forKey: "identifier") as? String, id.contains(bundlePrefix) {
+                return true
+            }
+            if let lang = mode.primaryLanguage, lang.contains(bundlePrefix) {
+                return true
+            }
+        }
+        #endif
+
+        // On device these are sandboxed and never succeed, so skip the main-thread disk reads.
+        #if targetEnvironment(simulator)
+        // 4. Simulator only: check com.apple.keyboard.preferences (iOS system preference suite)
         if let kbPrefs = UserDefaults(suiteName: "com.apple.keyboard.preferences") {
             if let list = kbPrefs.object(forKey: "KeyboardsCurrentAndNext") as? [String],
                list.contains(where: { $0.contains(bundlePrefix) }) {
@@ -64,7 +84,7 @@ public final class HarfiySettings: ObservableObject {
             }
         }
 
-        // 3. Check simulator or sandbox preference files directly
+        // Check simulator preference files directly
         let prefPaths = [
             NSHomeDirectory() + "/../../Library/Preferences/com.apple.keyboard.preferences.plist",
             NSHomeDirectory() + "/../Library/Preferences/com.apple.keyboard.preferences.plist",
@@ -84,23 +104,6 @@ public final class HarfiySettings: ObservableObject {
                    langDict.values.contains(where: { $0.contains(bundlePrefix) }) {
                     return true
                 }
-            }
-        }
-
-        // 4. Check AppleKeyboards in standard defaults
-        if let keyList = UserDefaults.standard.object(forKey: "AppleKeyboards") as? [String],
-           keyList.contains(where: { $0.contains(bundlePrefix) }) {
-            return true
-        }
-
-        #if canImport(UIKit)
-        // 5. Check activeInputModes
-        for mode in UITextInputMode.activeInputModes {
-            if let id = mode.value(forKey: "identifier") as? String, id.contains(bundlePrefix) {
-                return true
-            }
-            if let lang = mode.primaryLanguage, lang.contains(bundlePrefix) {
-                return true
             }
         }
         #endif
