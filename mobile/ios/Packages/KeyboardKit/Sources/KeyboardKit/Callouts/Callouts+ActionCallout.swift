@@ -51,7 +51,9 @@ public extension Callouts {
             Button(action: calloutContext.reset) {
                 VStack(alignment: calloutContext.alignment, spacing: 0) {
                     callout
-                    buttonArea
+                    if shouldShowButtonArea {
+                        buttonArea
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -59,8 +61,8 @@ public extension Callouts {
             .compositingGroup()
             .opacity(calloutContext.isActive ? 1 : 0)
             .keyboardCalloutShadow(style: calloutStyle)
-            .position(x: positionX, y: positionY)
-            .offset(y: style.verticalOffset)
+            .position(x: clampedPositionX, y: positionY)
+            .offset(y: shouldShowButtonArea ? style.verticalOffset : 0)
         }
         
         // MARK: - Deprecated
@@ -176,6 +178,20 @@ private extension Callouts.ActionCallout {
             )
     }
     
+    var calloutHeight: CGFloat {
+        calloutButtonSize.height + 2 * style.verticalTextPadding
+    }
+
+    var buttonAreaHeight: CGFloat {
+        buttonFrame.size.height
+    }
+
+    var shouldShowButtonArea: Bool {
+        if isPad { return false }
+        let rawTop = (buttonFrame.origin.y - style.verticalTextPadding) - (calloutHeight + buttonAreaHeight)/2 + style.verticalOffset
+        return rawTop >= 4
+    }
+
     var positionX: CGFloat {
         let buttonWidth = calloutButtonSize.width
         let adjustment = (CGFloat(calloutActions.count) * buttonWidth)/2
@@ -183,9 +199,26 @@ private extension Callouts.ActionCallout {
         let signedAdjustment = isTrailing ? -adjustment + buttonWidth - widthDiff : adjustment
         return buttonFrame.origin.x + signedAdjustment
     }
+
+    var clampedPositionX: CGFloat {
+        let calloutWidth = CGFloat(calloutActions.count) * calloutButtonSize.width + 2 * curveSize.width
+        let halfWidth = calloutWidth / 2
+        let screenWidth = keyboardContext.screenSize.width
+        var x = positionX
+        if x - halfWidth < 4 {
+            x = halfWidth + 4
+        } else if screenWidth > 0 && x + halfWidth > screenWidth - 4 {
+            x = screenWidth - 4 - halfWidth
+        }
+        return x
+    }
     
     var positionY: CGFloat {
-        buttonFrame.origin.y - style.verticalTextPadding
+        if shouldShowButtonArea {
+            return buttonFrame.origin.y - style.verticalTextPadding
+        } else {
+            return 4 + calloutHeight / 2
+        }
     }
 }
 

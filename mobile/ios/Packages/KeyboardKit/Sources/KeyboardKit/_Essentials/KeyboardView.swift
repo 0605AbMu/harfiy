@@ -312,7 +312,6 @@ private extension KeyboardView {
                 suggestionAction: actionHandler.handle(_:)
             )
         ))
-        .frame(minHeight: styleService.autocompleteToolbarStyle.height)
     }
 }
 

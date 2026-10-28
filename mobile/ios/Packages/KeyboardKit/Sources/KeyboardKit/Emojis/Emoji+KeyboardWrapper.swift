@@ -33,6 +33,6 @@ public extension Emoji {
             EmptyView()
         }
         
-        static let isEmojiKeyboardAvailable = false
+        static let isEmojiKeyboardAvailable = true
     }
 }
