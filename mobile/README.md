@@ -33,7 +33,9 @@ Terminal orqali quyidagi buyruqni ishga tushiring:
 ```bash
 ./mobile/scripts/build_ios.sh
 ```
-Ushbu skript `aarch64-apple-ios` va `aarch64-apple-ios-sim` targetlarida `harfiy-ffi` ni kompilyatsiya qiladi va `mobile/ios/Frameworks/HarfiyCore.xcframework` faylini tayyorlaydi.
+Ushbu skript `aarch64-apple-ios` va `aarch64-apple-ios-sim` targetlarida `harfiy-ffi` ni hajm bo'yicha optimallashtirilgan `ios` profilida (`opt-level = "s"`) kompilyatsiya qiladi va `mobile/ios/Frameworks/HarfiyCore.xcframework` faylini tayyorlaydi.
+
+> **Eslatma:** iOS loyihasida Swift zaxira (fallback) mantiqi yo'q — barcha konversiya Rust engine orqali bajariladi, shuning uchun Xcode'da ochishdan oldin `HarfiyCore.xcframework` yig'ilgan bo'lishi **shart**.
 
 ### 2-qadam: Xcode orqali ochish va sinash
 1. Xcode dasturida `mobile/ios` loyihasini oching.

@@ -14,12 +14,19 @@ pub enum HarfiyActionType {
     Transform = 2,
 }
 
+/// Result of processing one key event.
+///
+/// For `Transform`, `replacement_utf8` points to `replacement_len` bytes of UTF-8 that are
+/// **not** NUL-terminated. They belong to a `&'static str`, so the pointer stays valid for the
+/// lifetime of the process and must not be freed. For every other action the pointer is null
+/// and the length is 0.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct HarfiyActionResult {
     pub action_type: HarfiyActionType,
     pub backspaces_count: u32,
-    pub replacement_utf8: *const c_char,
+    pub replacement_utf8: *const u8,
+    pub replacement_len: usize,
 }
 
 impl Default for HarfiyActionResult {
@@ -28,90 +35,43 @@ impl Default for HarfiyActionResult {
             action_type: HarfiyActionType::PassThrough,
             backspaces_count: 0,
             replacement_utf8: ptr::null(),
+            replacement_len: 0,
         }
+    }
+}
+
+impl HarfiyActionResult {
+    /// The replacement text of a `Transform` result (empty for other actions).
+    ///
+    /// # Safety
+    /// `replacement_utf8`/`replacement_len` must come from this library (valid UTF-8, not modified).
+    pub unsafe fn replacement(&self) -> &str {
+        if self.replacement_utf8.is_null() {
+            return "";
+        }
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            self.replacement_utf8,
+            self.replacement_len,
+        ))
     }
 }
 
 fn map_action(action: KeyAction) -> HarfiyActionResult {
     match action {
-        KeyAction::PassThrough => HarfiyActionResult {
-            action_type: HarfiyActionType::PassThrough,
-            backspaces_count: 0,
-            replacement_utf8: ptr::null(),
-        },
+        KeyAction::PassThrough => HarfiyActionResult::default(),
         KeyAction::Suppress => HarfiyActionResult {
             action_type: HarfiyActionType::Suppress,
-            backspaces_count: 0,
-            replacement_utf8: ptr::null(),
+            ..HarfiyActionResult::default()
         },
         KeyAction::Transform {
             backspaces_count,
             replacement,
-        } => {
-            // Note: replacement is &'static str (e.g. "ş\0") so its pointer is statically valid.
-            // But to guarantee null-termination in C, we map known static replacements to null-terminated C-strings.
-            let c_str = match replacement {
-                "ş" => c"ş".as_ptr(),
-                "Ş" => c"Ş".as_ptr(),
-                "ç" => c"ç".as_ptr(),
-                "Ç" => c"Ç".as_ptr(),
-                "ö" => c"ö".as_ptr(),
-                "Ö" => c"Ö".as_ptr(),
-                "ğ" => c"ğ".as_ptr(),
-                "Ğ" => c"Ğ".as_ptr(),
-                "ñ" => c"ñ".as_ptr(),
-                "Ñ" => c"Ñ".as_ptr(),
-                "sh" => c"sh".as_ptr(),
-                "sH" => c"sH".as_ptr(),
-                "Sh" => c"Sh".as_ptr(),
-                "SH" => c"SH".as_ptr(),
-                "ch" => c"ch".as_ptr(),
-                "cH" => c"cH".as_ptr(),
-                "Ch" => c"Ch".as_ptr(),
-                "CH" => c"CH".as_ptr(),
-                "o'" => c"o'".as_ptr(),
-                "o`" => c"o`".as_ptr(),
-                "o‘" => c"o‘".as_ptr(),
-                "o’" => c"o’".as_ptr(),
-                "oʻ" => c"oʻ".as_ptr(),
-                "oʼ" => c"oʼ".as_ptr(),
-                "o´" => c"o´".as_ptr(),
-                "O'" => c"O'".as_ptr(),
-                "O`" => c"O`".as_ptr(),
-                "O‘" => c"O‘".as_ptr(),
-                "O’" => c"O’".as_ptr(),
-                "Oʻ" => c"Oʻ".as_ptr(),
-                "Oʼ" => c"Oʼ".as_ptr(),
-                "O´" => c"O´".as_ptr(),
-                "g'" => c"g'".as_ptr(),
-                "g`" => c"g`".as_ptr(),
-                "g‘" => c"g‘".as_ptr(),
-                "g’" => c"g’".as_ptr(),
-                "gʻ" => c"gʻ".as_ptr(),
-                "gʼ" => c"gʼ".as_ptr(),
-                "g´" => c"g´".as_ptr(),
-                "G'" => c"G'".as_ptr(),
-                "G`" => c"G`".as_ptr(),
-                "G‘" => c"G‘".as_ptr(),
-                "G’" => c"G’".as_ptr(),
-                "Gʻ" => c"Gʻ".as_ptr(),
-                "Gʼ" => c"Gʼ".as_ptr(),
-                "G´" => c"G´".as_ptr(),
-                "ng" => c"ng".as_ptr(),
-                "nG" => c"nG".as_ptr(),
-                "Ng" => c"Ng".as_ptr(),
-                "NG" => c"NG".as_ptr(),
-                "õ" => c"õ".as_ptr(),
-                "Õ" => c"Õ".as_ptr(),
-                _ => c"".as_ptr(),
-            };
-
-            HarfiyActionResult {
-                action_type: HarfiyActionType::Transform,
-                backspaces_count: backspaces_count as u32,
-                replacement_utf8: c_str,
-            }
-        }
+        } => HarfiyActionResult {
+            action_type: HarfiyActionType::Transform,
+            backspaces_count: backspaces_count as u32,
+            replacement_utf8: replacement.as_ptr(),
+            replacement_len: replacement.len(),
+        },
     }
 }
 
@@ -252,17 +212,84 @@ mod tests {
             let res_h = harfiy_engine_process_char(engine, 'h' as u32);
             assert_eq!(res_h.action_type, HarfiyActionType::Transform);
             assert_eq!(res_h.backspaces_count, 1);
-            let repl = CStr::from_ptr(res_h.replacement_utf8).to_str().unwrap();
-            assert_eq!(repl, "ş");
+            assert_eq!(res_h.replacement(), "ş");
 
             // Instant Undo: Backspace -> should undo to "sh"
             let res_undo = harfiy_engine_process_backspace(engine);
             assert_eq!(res_undo.action_type, HarfiyActionType::Transform);
             assert_eq!(res_undo.backspaces_count, 1);
-            let undo_repl = CStr::from_ptr(res_undo.replacement_utf8).to_str().unwrap();
-            assert_eq!(undo_repl, "sh");
+            assert_eq!(res_undo.replacement(), "sh");
 
             harfiy_engine_destroy(engine);
         }
+    }
+
+    /// Every transform the engine can produce (and every undo of it) must reach C intact.
+    /// Regression: the old NUL-terminated string table silently returned "" for unlisted
+    /// replacements (e.g. the undo of `o` + a rare apostrophe variant).
+    #[test]
+    fn ffi_replacements_match_engine_for_all_trigger_pairs() {
+        fn engine_replacement(action: KeyAction) -> Option<(usize, &'static str)> {
+            match action {
+                KeyAction::Transform {
+                    backspaces_count,
+                    replacement,
+                } => Some((backspaces_count, replacement)),
+                _ => None,
+            }
+        }
+
+        let firsts = "sScCoOgGnN";
+        let seconds = "hHgG'`‘’ʻʼ´‛ʽʹ′＇ˊˋõÕ";
+        let mut transforms = 0;
+
+        for enable_ng in [false, true] {
+            for a in firsts.chars() {
+                for b in seconds.chars() {
+                    let mut reference = HarfiyEngine::new(EngineConfig {
+                        enable_ng,
+                        enabled: true,
+                    });
+                    reference.process(InputEvent::Char(a));
+                    let expected = engine_replacement(reference.process(InputEvent::Char(b)));
+                    let expected_undo = engine_replacement(
+                        reference.process(InputEvent::Special(SpecialKey::Backspace)),
+                    );
+
+                    unsafe {
+                        let engine = harfiy_engine_create(enable_ng);
+                        harfiy_engine_process_char(engine, a as u32);
+                        let res = harfiy_engine_process_char(engine, b as u32);
+                        let undo = harfiy_engine_process_backspace(engine);
+                        harfiy_engine_destroy(engine);
+
+                        for (res, expected) in [(res, expected), (undo, expected_undo)] {
+                            match expected {
+                                Some((backspaces, text)) => {
+                                    transforms += 1;
+                                    assert_eq!(
+                                        res.action_type,
+                                        HarfiyActionType::Transform,
+                                        "{a}{b}"
+                                    );
+                                    assert_eq!(res.backspaces_count as usize, backspaces, "{a}{b}");
+                                    assert!(!text.is_empty(), "{a}{b}");
+                                    assert_eq!(res.replacement(), text, "{a}{b}");
+                                }
+                                None => assert_ne!(
+                                    res.action_type,
+                                    HarfiyActionType::Transform,
+                                    "{a}{b}"
+                                ),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            transforms > 100,
+            "probe produced too few transforms: {transforms}"
+        );
     }
 }

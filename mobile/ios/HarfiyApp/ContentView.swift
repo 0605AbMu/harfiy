@@ -26,8 +26,6 @@ public struct ContentView: View {
     @State private var isKeyboardActiveInSystem: Bool = false
     @FocusState private var isFieldFocused: Bool
 
-    private let engine = HarfiyEngineBridge()
-
     public init() {}
 
     public var body: some View {
@@ -672,8 +670,11 @@ public struct ContentView: View {
 
     private func convertPracticeText() {
         guard !practiceText.isEmpty else { return }
-        engine.setEnableNg(settings.enableNg)
-        let (converted, count) = engine.convertText(practiceText, smartApostrophe: true)
+        let (converted, count) = HarfiyEngineBridge.convertText(
+            practiceText,
+            enableNg: settings.enableNg,
+            smartApostrophe: true
+        )
         practiceText = converted
         if count > 0 {
             settings.recordBatchConversions(totalAdded: count)

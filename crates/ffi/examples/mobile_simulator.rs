@@ -1,7 +1,6 @@
 //! Interactive Mobile Keyboard Simulator
 //! Simulates keystroke events and JNI/C-ABI processing exactly as iOS & Android keyboards do.
 
-use std::ffi::CStr;
 use std::io::{self, Write};
 
 use harfiy_ffi::c_api::*;
@@ -49,11 +48,7 @@ fn main() {
                 }
                 HarfiyActionType::Transform => {
                     let backspaces = res.backspaces_count as usize;
-                    let replacement = unsafe {
-                        CStr::from_ptr(res.replacement_utf8)
-                            .to_str()
-                            .unwrap_or("")
-                    };
+                    let replacement = unsafe { res.replacement() };
                     for _ in 0..backspaces {
                         current_text.pop();
                     }
@@ -80,11 +75,7 @@ fn main() {
                 }
                 HarfiyActionType::Transform => {
                     let backspaces = res.backspaces_count as usize;
-                    let replacement = unsafe {
-                        CStr::from_ptr(res.replacement_utf8)
-                            .to_str()
-                            .unwrap_or("")
-                    };
+                    let replacement = unsafe { res.replacement() };
                     for _ in 0..backspaces {
                         current_text.pop();
                     }
