@@ -29,6 +29,11 @@ private final class HarfiyEmojiSections: ObservableObject {
     let sections: [HarfiyEmojiSection]
 
     init(categories: [EmojiCategory]) {
+        let signpost = HarfiyPerf.signposter.beginInterval("emojiSections")
+        defer {
+            HarfiyPerf.signposter.endInterval("emojiSections", signpost)
+            HarfiyPerf.emitAvailableMemory()
+        }
         // Trim lists persisted before the limit existed (KeyboardKit defaults to 10 000 entries).
         if EmojiCategory.frequentEmojis.count > harfiyFrequentEmojiLimit {
             EmojiCategory.frequentEmojis = Array(EmojiCategory.frequentEmojis.prefix(harfiyFrequentEmojiLimit))

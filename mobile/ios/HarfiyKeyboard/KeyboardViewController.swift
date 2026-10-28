@@ -9,12 +9,17 @@
 import UIKit
 import SwiftUI
 import KeyboardKit
+import os
 
 public class KeyboardViewController: KeyboardInputViewController {
 
     private var isKeyboardViewSetup = false
 
+    /// Open from the start of `viewDidLoad` until the keyboard first appears (cold-start time).
+    private var launchSignpost: OSSignpostIntervalState?
+
     public override func viewDidLoad() {
+        launchSignpost = HarfiyPerf.signposter.beginInterval("keyboardLaunch")
         super.viewDidLoad()
 
         // Mark keyboard extension active in shared settings (written only the first time)
@@ -84,6 +89,15 @@ public class KeyboardViewController: KeyboardInputViewController {
         HarfiySpaceState.shared.triggerAnimation(isAlphabetic: context.keyboardType.isAlphabetic)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if let launchSignpost {
+            HarfiyPerf.signposter.endInterval("keyboardLaunch", launchSignpost)
+            self.launchSignpost = nil
+        }
+        HarfiyPerf.emitAvailableMemory()
+    }
+
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         // Persist conversion counts that are still buffered in memory.
@@ -136,6 +150,8 @@ public class KeyboardViewController: KeyboardInputViewController {
         // Read the context on the next run loop, once the proxy has caught up.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            let signpost = HarfiyPerf.signposter.beginInterval("selectionDidChange")
+            defer { HarfiyPerf.signposter.endInterval("selectionDidChange", signpost) }
             // The context is passed lazily: reading it is a round-trip to the host app.
             (self.services.actionHandler as? HarfiyActionHandler)?
                 .selectionDidChange(contextBeforeInput: self.textDocumentProxy.documentContextBeforeInput)

@@ -124,6 +124,8 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
 
     private func insertCharacter(_ text: String, using controller: KeyboardController?) {
         guard let controller else { return }
+        let signpost = HarfiyPerf.signposter.beginInterval("insertCharacter")
+        defer { HarfiyPerf.signposter.endInterval("insertCharacter", signpost) }
 
         // Multi-character inputs (e.g. ".com" or emoji sequences) are not engine keystrokes.
         guard text.count == 1, let char = text.first else {
@@ -151,6 +153,8 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
 
     private func deleteBackward(using controller: KeyboardController?) {
         guard let controller else { return }
+        let signpost = HarfiyPerf.signposter.beginInterval("deleteBackward")
+        defer { HarfiyPerf.signposter.endInterval("deleteBackward", signpost) }
 
         guard settings.instantUndo else {
             resetEngine()

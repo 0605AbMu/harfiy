@@ -28,6 +28,7 @@
 		A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */; };
 		A200000B2C00000100000001 /* HarfiyKeyboardStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */; };
 		A200000D2C00000100000001 /* HarfiySpaceButtonContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */; };
+		A200000E2C00000100000001 /* HarfiyPerf.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000C2C00000100000001 /* HarfiyPerf.swift */; };
 		DCF71A17FB52CB5080B06DD5 /* HarfiyKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBF1DBBFCB17E83BABC1E49F /* HarfiyKeyboardUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -80,6 +81,7 @@
 		B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyEmojiKeyboard.swift; sourceTree = "<group>"; };
 		B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyKeyboardStyleService.swift; sourceTree = "<group>"; };
 		B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiySpaceButtonContent.swift; sourceTree = "<group>"; };
+		B200000C2C00000100000001 /* HarfiyPerf.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyPerf.swift; sourceTree = "<group>"; };
 		B30000012C00000100000001 /* HarfiyCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = HarfiyCore.xcframework; sourceTree = "<group>"; };
 		C10000012C00000100000001 /* HarfiyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -151,6 +153,7 @@
 				B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */,
 				B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */,
 				B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */,
+				B200000C2C00000100000001 /* HarfiyPerf.swift */,
 				B20000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyKeyboard;
@@ -355,6 +358,7 @@
 				A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */,
 				A200000B2C00000100000001 /* HarfiyKeyboardStyleService.swift in Sources */,
 				A200000D2C00000100000001 /* HarfiySpaceButtonContent.swift in Sources */,
+				A200000E2C00000100000001 /* HarfiyPerf.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

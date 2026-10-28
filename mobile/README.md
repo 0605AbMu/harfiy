@@ -43,6 +43,25 @@ Ushbu skript `aarch64-apple-ios` va `aarch64-apple-ios-sim` targetlarida `harfiy
 3. Telefonda: **Settings -> General -> Keyboard -> Keyboards -> Add New Keyboard -> Harfiy** ni tanlang.
 4. Istalgan messenjerda (Telegram, Notes) `shahar`, `choy`, `o'rik`, `g'isht` deb yozib sinab ko'ring.
 
+### iOS klaviaturasini profil qilish (Instruments)
+
+Klaviatura kodida `os_signpost` belgilari bor (`HarfiyKeyboard/HarfiyPerf.swift`). Profiler ulanmaganda ular deyarli bepul, shuning uchun release'da ham qoladi.
+
+1. Xcode'da `HarfiyKeyboard` sxemasini tanlab, host ilova sifatida Notes (yoki Telegram) ni belgilang va **Product -> Profile (Cmd + I)** ni bosing.
+2. Instruments shabloni: **Time Profiler** + **Points of Interest** (yoki **os_signpost**).
+3. Quyidagi belgilarni qidiring (subsystem `uz.harfiy.keyboard`):
+
+| Belgi | Nimani o'lchaydi |
+|-------|------------------|
+| `keyboardLaunch` | `viewDidLoad` dan birinchi ko'rinishgacha (cold-start) |
+| `insertCharacter` | bitta harf bosilishi: engine + host proxy chaqiruvlari |
+| `deleteBackward` | Backspace (Instant Undo bilan) |
+| `selectionDidChange` | kursor/tanlov o'zgarishi, host kontekstini o'qish bilan |
+| `emojiSections` | emoji klaviatura ma'lumotlarini yig'ish |
+| `availableMemoryMB` (event) | extension tizim tomonidan to'xtatilishidan oldin qolgan xotira |
+
+Xotira bo'yicha: `availableMemoryMB` qiymati klaviatura ochilgan sari kamayib borsa, xotira oqishi bor.
+
 ---
 
 ## 🤖 2. Android Yordamchisini Yig'ish va Sinash
