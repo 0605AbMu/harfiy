@@ -7,6 +7,9 @@
 
 import Foundation
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public final class HarfiySettings: ObservableObject {
     public static let shared = HarfiySettings()
@@ -23,6 +26,10 @@ public final class HarfiySettings: ObservableObject {
     public static let keyAudioFeedback = "audio_feedback"
     public static let keyHasCompletedWizard = "has_completed_wizard"
 
+    // Keyboard activation keys
+    public static let keyKeyboardExtensionActive = "is_keyboard_extension_active"
+    public static let keyKeyboardLastOpened = "keyboard_last_opened_timestamp"
+
     // Statistics keys
     public static let keyStatsTotal = "stats_total_conversions"
     public static let keyStatsSh = "stats_sh_count"
@@ -30,6 +37,76 @@ public final class HarfiySettings: ObservableObject {
     public static let keyStatsO = "stats_o_count"
     public static let keyStatsG = "stats_g_count"
     public static let keyStatsNg = "stats_ng_count"
+
+    /// Unified check across iOS system preferences, App Group defaults, and active input modes
+    public static func isKeyboardActiveInSystem() -> Bool {
+        let bundlePrefix = "uz.harfiy.keyboard"
+
+        // 1. Check shared group defaults if keyboard extension ever ran
+        if let groupDefaults = UserDefaults(suiteName: appGroupIdentifier),
+           groupDefaults.bool(forKey: keyKeyboardExtensionActive) {
+            return true
+        }
+
+        // 2. Check com.apple.keyboard.preferences (iOS system preference suite)
+        if let kbPrefs = UserDefaults(suiteName: "com.apple.keyboard.preferences") {
+            if let list = kbPrefs.object(forKey: "KeyboardsCurrentAndNext") as? [String],
+               list.contains(where: { $0.contains(bundlePrefix) }) {
+                return true
+            }
+            if let lastUsed = kbPrefs.string(forKey: "KeyboardLastUsed"),
+               lastUsed.contains(bundlePrefix) {
+                return true
+            }
+            if let langDict = kbPrefs.dictionary(forKey: "KeyboardLastUsedForLanguage") as? [String: String],
+               langDict.values.contains(where: { $0.contains(bundlePrefix) }) {
+                return true
+            }
+        }
+
+        // 3. Check simulator or sandbox preference files directly
+        let prefPaths = [
+            NSHomeDirectory() + "/../../Library/Preferences/com.apple.keyboard.preferences.plist",
+            NSHomeDirectory() + "/../Library/Preferences/com.apple.keyboard.preferences.plist",
+            "/var/mobile/Library/Preferences/com.apple.keyboard.preferences.plist"
+        ]
+        for path in prefPaths {
+            if let dict = NSDictionary(contentsOfFile: path) {
+                if let list = dict["KeyboardsCurrentAndNext"] as? [String],
+                   list.contains(where: { $0.contains(bundlePrefix) }) {
+                    return true
+                }
+                if let lastUsed = dict["KeyboardLastUsed"] as? String,
+                   lastUsed.contains(bundlePrefix) {
+                    return true
+                }
+                if let langDict = dict["KeyboardLastUsedForLanguage"] as? [String: String],
+                   langDict.values.contains(where: { $0.contains(bundlePrefix) }) {
+                    return true
+                }
+            }
+        }
+
+        // 4. Check AppleKeyboards in standard defaults
+        if let keyList = UserDefaults.standard.object(forKey: "AppleKeyboards") as? [String],
+           keyList.contains(where: { $0.contains(bundlePrefix) }) {
+            return true
+        }
+
+        #if canImport(UIKit)
+        // 5. Check activeInputModes
+        for mode in UITextInputMode.activeInputModes {
+            if let id = mode.value(forKey: "identifier") as? String, id.contains(bundlePrefix) {
+                return true
+            }
+            if let lang = mode.primaryLanguage, lang.contains(bundlePrefix) {
+                return true
+            }
+        }
+        #endif
+
+        return false
+    }
 
     public init() {
         if let groupDefaults = UserDefaults(suiteName: HarfiySettings.appGroupIdentifier) {
@@ -55,7 +132,22 @@ public final class HarfiySettings: ObservableObject {
         self.audioFeedback = userDefaults.bool(forKey: Self.keyAudioFeedback)
         self.hasCompletedWizard = userDefaults.bool(forKey: Self.keyHasCompletedWizard)
 
-        reloadStats()
+        self.totalConversions = userDefaults.integer(forKey: Self.keyStatsTotal)
+        self.shCount = userDefaults.integer(forKey: Self.keyStatsSh)
+        self.chCount = userDefaults.integer(forKey: Self.keyStatsCh)
+        self.oCount = userDefaults.integer(forKey: Self.keyStatsO)
+        self.gCount = userDefaults.integer(forKey: Self.keyStatsG)
+        self.ngCount = userDefaults.integer(forKey: Self.keyStatsNg)
+    }
+
+    /// Reload user preferences from shared UserDefaults (e.g. when keyboard appears)
+    public func reloadSettings() {
+        self.instantUndo = userDefaults.bool(forKey: Self.keyInstantUndo)
+        self.enableNg = userDefaults.bool(forKey: Self.keyEnableNg)
+        self.smartApostrophe = userDefaults.bool(forKey: Self.keySmartApostrophe)
+        self.hapticFeedback = userDefaults.bool(forKey: Self.keyHapticFeedback)
+        self.audioFeedback = userDefaults.bool(forKey: Self.keyAudioFeedback)
+        self.hasCompletedWizard = userDefaults.bool(forKey: Self.keyHasCompletedWizard)
     }
 
     @Published public var instantUndo: Bool {
@@ -105,27 +197,30 @@ public final class HarfiySettings: ObservableObject {
     }
 
     public func recordConversion(character: String) {
-        let total = userDefaults.integer(forKey: Self.keyStatsTotal) + 1
-        userDefaults.set(total, forKey: Self.keyStatsTotal)
+        // Run stats writing asynchronously off the main thread so typing is never blocked
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let total = self.userDefaults.integer(forKey: Self.keyStatsTotal) + 1
+            self.userDefaults.set(total, forKey: Self.keyStatsTotal)
 
-        let lower = character.lowercased()
-        if lower.contains("ş") {
-            let val = userDefaults.integer(forKey: Self.keyStatsSh) + 1
-            userDefaults.set(val, forKey: Self.keyStatsSh)
-        } else if lower.contains("ç") {
-            let val = userDefaults.integer(forKey: Self.keyStatsCh) + 1
-            userDefaults.set(val, forKey: Self.keyStatsCh)
-        } else if lower.contains("ö") || lower.contains("oʻ") || lower.contains("o'") {
-            let val = userDefaults.integer(forKey: Self.keyStatsO) + 1
-            userDefaults.set(val, forKey: Self.keyStatsO)
-        } else if lower.contains("ğ") || lower.contains("gʻ") || lower.contains("g'") {
-            let val = userDefaults.integer(forKey: Self.keyStatsG) + 1
-            userDefaults.set(val, forKey: Self.keyStatsG)
-        } else if lower.contains("ñ") {
-            let val = userDefaults.integer(forKey: Self.keyStatsNg) + 1
-            userDefaults.set(val, forKey: Self.keyStatsNg)
+            let lower = character.lowercased()
+            if lower.contains("ş") {
+                let val = self.userDefaults.integer(forKey: Self.keyStatsSh) + 1
+                self.userDefaults.set(val, forKey: Self.keyStatsSh)
+            } else if lower.contains("ç") {
+                let val = self.userDefaults.integer(forKey: Self.keyStatsCh) + 1
+                self.userDefaults.set(val, forKey: Self.keyStatsCh)
+            } else if lower.contains("ö") || lower.contains("oʻ") || lower.contains("o'") {
+                let val = self.userDefaults.integer(forKey: Self.keyStatsO) + 1
+                self.userDefaults.set(val, forKey: Self.keyStatsO)
+            } else if lower.contains("ğ") || lower.contains("gʻ") || lower.contains("g'") {
+                let val = self.userDefaults.integer(forKey: Self.keyStatsG) + 1
+                self.userDefaults.set(val, forKey: Self.keyStatsG)
+            } else if lower.contains("ñ") {
+                let val = self.userDefaults.integer(forKey: Self.keyStatsNg) + 1
+                self.userDefaults.set(val, forKey: Self.keyStatsNg)
+            }
         }
-        reloadStats()
     }
 
     public func recordBatchConversions(totalAdded: Int, sh: Int = 0, ch: Int = 0, o: Int = 0, g: Int = 0, ng: Int = 0) {
