@@ -49,14 +49,16 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
     }
 
     /// Reset the engine when the user moves the cursor or changes the selection.
-    public func selectionDidChange(contextBeforeInput: String?) {
-        if let last = lastInsertedText, let context = contextBeforeInput, context.hasSuffix(last) { return }
+    ///
+    /// `contextBeforeInput` is an autoclosure because reading the document context is a
+    /// round-trip to the host app; it is only evaluated when the answer can change the outcome.
+    public func selectionDidChange(contextBeforeInput: @autoclosure () -> String?) {
+        guard let last = lastInsertedText else {
+            resetEngine()
+            return
+        }
+        if let context = contextBeforeInput(), context.hasSuffix(last) { return }
         resetEngine()
-    }
-
-    /// Trigger Instant Undo for recent automatic conversion (toolbar undo button).
-    public func handleUndo() {
-        deleteBackward(using: keyboardController)
     }
 
     open override func handle(_ suggestion: Autocomplete.Suggestion) {

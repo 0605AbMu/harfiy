@@ -48,6 +48,7 @@ open class HarfiyKeyboardLayoutService: KeyboardLayout.StandardService {
         let returnAction = returnItem?.action ?? .primary(.return)
 
         // Keep any special middle input actions (e.g. '@', '.' in email/URL modes)
+        let dictationReplacement = context.keyboardDictationReplacement
         let middleInputItems = bottomRow.filter {
             $0.action != switchAction &&
             !$0.action.isPrimaryAction &&
@@ -55,7 +56,7 @@ open class HarfiyKeyboardLayoutService: KeyboardLayout.StandardService {
             $0.action != .keyboardType(.emojis) &&
             $0.action != .custom(named: "emoji") &&
             $0.action != .space &&
-            $0.action != context.keyboardDictationReplacement
+            $0.action != dictationReplacement
         }
 
         var newBottomRow = [KeyboardLayout.Item]()
@@ -139,22 +140,31 @@ open class HarfiyKeyboardLayoutService: KeyboardLayout.StandardService {
     /// Determines whether the emoji button should be displayed matching Apple's native keyboard logic.
     /// In native iOS keyboards, emoji is shown for standard text & search inputs, but hidden for
     /// email addresses, web URLs, passwords, and ASCII-restricted fields.
+    ///
+    /// The layout is rebuilt often (shift, orientation, keyboard type), so the checks that need no
+    /// text-input traits run first and the proxy is only consulted when they pass.
     private func shouldShowEmojiButton(context: KeyboardContext, middleInputItems: [KeyboardLayout.Item]) -> Bool {
         // 1. Emoji is only ever available on the alphabetic keyboard layer
         guard context.keyboardType.isAlphabetic else { return false }
 
-        // 2. Do not show emoji in secure / password fields
-        if context.textDocumentProxy.isSecureTextEntry == true { return false }
+        // 2. Do not show emoji if special middle input items exist (e.g. email '@', '.' or URL '.', '/', '.com')
+        guard middleInputItems.isEmpty else { return false }
+
+        // 3. Text-input traits of the target field
+        let proxy = context.textDocumentProxy
+
+        // Do not show emoji in secure / password fields
+        if proxy.isSecureTextEntry == true { return false }
 
         #if os(iOS) || os(tvOS) || os(visionOS)
-        if let contentType = context.textDocumentProxy.textContentType {
+        if let contentType = proxy.textContentType {
             if contentType == .password || contentType == .newPassword || contentType == .oneTimeCode || contentType == .emailAddress || contentType == .telephoneNumber || contentType == .creditCardNumber {
                 return false
             }
         }
 
-        // 3. Check UIKeyboardType of the target input
-        if let type = context.textDocumentProxy.keyboardType {
+        // Check UIKeyboardType of the target input
+        if let type = proxy.keyboardType {
             switch type {
             case .emailAddress, .URL, .webSearch, .asciiCapable, .asciiCapableNumberPad, .numberPad, .phonePad, .namePhonePad, .decimalPad:
                 return false
@@ -163,9 +173,6 @@ open class HarfiyKeyboardLayoutService: KeyboardLayout.StandardService {
             }
         }
         #endif
-
-        // 4. Do not show emoji if special middle input items exist (e.g. email '@', '.' or URL '.', '/', '.com')
-        if !middleInputItems.isEmpty { return false }
 
         return true
     }

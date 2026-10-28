@@ -28,7 +28,6 @@ public final class HarfiySettings: ObservableObject {
 
     // Keyboard activation keys
     public static let keyKeyboardExtensionActive = "is_keyboard_extension_active"
-    public static let keyKeyboardLastOpened = "keyboard_last_opened_timestamp"
 
     // Statistics keys
     public static let keyStatsTotal = "stats_total_conversions"
@@ -143,8 +142,24 @@ public final class HarfiySettings: ObservableObject {
         self.ngCount = userDefaults.integer(forKey: Self.keyStatsNg)
     }
 
+    /// Set while `reloadSettings()` runs so the `didSet` observers don't write the values back.
+    private var isReloading = false
+
+    private func persist(_ value: Bool, forKey key: String) {
+        guard !isReloading else { return }
+        userDefaults.set(value, forKey: key)
+    }
+
+    /// Flag (once) that the keyboard extension has run, so the app can detect it is enabled.
+    public func markKeyboardExtensionActive() {
+        guard !userDefaults.bool(forKey: Self.keyKeyboardExtensionActive) else { return }
+        userDefaults.set(true, forKey: Self.keyKeyboardExtensionActive)
+    }
+
     /// Reload user preferences from shared UserDefaults (e.g. when keyboard appears)
     public func reloadSettings() {
+        isReloading = true
+        defer { isReloading = false }
         self.instantUndo = userDefaults.bool(forKey: Self.keyInstantUndo)
         self.enableNg = userDefaults.bool(forKey: Self.keyEnableNg)
         self.smartApostrophe = userDefaults.bool(forKey: Self.keySmartApostrophe)
@@ -154,27 +169,27 @@ public final class HarfiySettings: ObservableObject {
     }
 
     @Published public var instantUndo: Bool {
-        didSet { userDefaults.set(instantUndo, forKey: Self.keyInstantUndo) }
+        didSet { persist(instantUndo, forKey: Self.keyInstantUndo) }
     }
 
     @Published public var enableNg: Bool {
-        didSet { userDefaults.set(enableNg, forKey: Self.keyEnableNg) }
+        didSet { persist(enableNg, forKey: Self.keyEnableNg) }
     }
 
     @Published public var smartApostrophe: Bool {
-        didSet { userDefaults.set(smartApostrophe, forKey: Self.keySmartApostrophe) }
+        didSet { persist(smartApostrophe, forKey: Self.keySmartApostrophe) }
     }
 
     @Published public var hapticFeedback: Bool {
-        didSet { userDefaults.set(hapticFeedback, forKey: Self.keyHapticFeedback) }
+        didSet { persist(hapticFeedback, forKey: Self.keyHapticFeedback) }
     }
 
     @Published public var audioFeedback: Bool {
-        didSet { userDefaults.set(audioFeedback, forKey: Self.keyAudioFeedback) }
+        didSet { persist(audioFeedback, forKey: Self.keyAudioFeedback) }
     }
 
     @Published public var hasCompletedWizard: Bool {
-        didSet { userDefaults.set(hasCompletedWizard, forKey: Self.keyHasCompletedWizard) }
+        didSet { persist(hasCompletedWizard, forKey: Self.keyHasCompletedWizard) }
     }
 
     // Statistics
@@ -199,52 +214,88 @@ public final class HarfiySettings: ObservableObject {
         ngCount = userDefaults.integer(forKey: Self.keyStatsNg)
     }
 
-    public func recordConversion(character: String) {
-        // Run stats writing asynchronously off the main thread so typing is never blocked
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
-            let total = self.userDefaults.integer(forKey: Self.keyStatsTotal) + 1
-            self.userDefaults.set(total, forKey: Self.keyStatsTotal)
+    // MARK: - Statistics writes
 
+    /// Conversions made in the keyboard are counted in memory and written in batches:
+    /// every UserDefaults write is a cfprefsd round-trip, too heavy to pay per keystroke.
+    private struct PendingStats {
+        var total = 0, sh = 0, ch = 0, o = 0, g = 0, ng = 0
+
+        mutating func add(character: String) {
+            total += 1
             let lower = character.lowercased()
             if lower.contains("ş") {
-                let val = self.userDefaults.integer(forKey: Self.keyStatsSh) + 1
-                self.userDefaults.set(val, forKey: Self.keyStatsSh)
+                sh += 1
             } else if lower.contains("ç") {
-                let val = self.userDefaults.integer(forKey: Self.keyStatsCh) + 1
-                self.userDefaults.set(val, forKey: Self.keyStatsCh)
+                ch += 1
             } else if lower.contains("ö") || lower.contains("oʻ") || lower.contains("o'") {
-                let val = self.userDefaults.integer(forKey: Self.keyStatsO) + 1
-                self.userDefaults.set(val, forKey: Self.keyStatsO)
+                o += 1
             } else if lower.contains("ğ") || lower.contains("gʻ") || lower.contains("g'") {
-                let val = self.userDefaults.integer(forKey: Self.keyStatsG) + 1
-                self.userDefaults.set(val, forKey: Self.keyStatsG)
+                g += 1
             } else if lower.contains("ñ") {
-                let val = self.userDefaults.integer(forKey: Self.keyStatsNg) + 1
-                self.userDefaults.set(val, forKey: Self.keyStatsNg)
+                ng += 1
             }
         }
     }
 
-    public func recordBatchConversions(totalAdded: Int, sh: Int = 0, ch: Int = 0, o: Int = 0, g: Int = 0, ng: Int = 0) {
-        let currentTotal = userDefaults.integer(forKey: Self.keyStatsTotal) + totalAdded
-        userDefaults.set(currentTotal, forKey: Self.keyStatsTotal)
+    private static let statsFlushBatchSize = 20
+    private static let statsFlushIdleDelay: TimeInterval = 3
 
-        if sh > 0 {
-            userDefaults.set(userDefaults.integer(forKey: Self.keyStatsSh) + sh, forKey: Self.keyStatsSh)
+    /// Serial queue guarding `pendingStats`, `idleFlush` and every stats write made by the keyboard.
+    private let statsQueue = DispatchQueue(label: "uz.harfiy.keyboard.stats", qos: .utility)
+    private var pendingStats = PendingStats()
+    private var idleFlush: DispatchWorkItem?
+
+    /// Count one automatic conversion. Never blocks the caller.
+    public func recordConversion(character: String) {
+        statsQueue.async {
+            self.pendingStats.add(character: character)
+            if self.pendingStats.total >= Self.statsFlushBatchSize {
+                self.flushPendingStatsLocked()
+            } else {
+                self.scheduleIdleFlushLocked()
+            }
         }
-        if ch > 0 {
-            userDefaults.set(userDefaults.integer(forKey: Self.keyStatsCh) + ch, forKey: Self.keyStatsCh)
+    }
+
+    /// Write any buffered conversions now (call when the keyboard goes away).
+    public func flushPendingStats() {
+        statsQueue.async(qos: .userInitiated) {
+            self.flushPendingStatsLocked()
         }
-        if o > 0 {
-            userDefaults.set(userDefaults.integer(forKey: Self.keyStatsO) + o, forKey: Self.keyStatsO)
+    }
+
+    private func scheduleIdleFlushLocked() {
+        idleFlush?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.flushPendingStatsLocked() }
+        idleFlush = item
+        statsQueue.asyncAfter(deadline: .now() + Self.statsFlushIdleDelay, execute: item)
+    }
+
+    private func flushPendingStatsLocked() {
+        idleFlush?.cancel()
+        idleFlush = nil
+        let pending = pendingStats
+        guard pending.total > 0 else { return }
+        pendingStats = PendingStats()
+        addToStoredStats(total: pending.total, sh: pending.sh, ch: pending.ch, o: pending.o, g: pending.g, ng: pending.ng)
+    }
+
+    private func addToStoredStats(total: Int, sh: Int, ch: Int, o: Int, g: Int, ng: Int) {
+        func bump(_ key: String, by amount: Int) {
+            guard amount > 0 else { return }
+            userDefaults.set(userDefaults.integer(forKey: key) + amount, forKey: key)
         }
-        if g > 0 {
-            userDefaults.set(userDefaults.integer(forKey: Self.keyStatsG) + g, forKey: Self.keyStatsG)
-        }
-        if ng > 0 {
-            userDefaults.set(userDefaults.integer(forKey: Self.keyStatsNg) + ng, forKey: Self.keyStatsNg)
-        }
+        bump(Self.keyStatsTotal, by: total)
+        bump(Self.keyStatsSh, by: sh)
+        bump(Self.keyStatsCh, by: ch)
+        bump(Self.keyStatsO, by: o)
+        bump(Self.keyStatsG, by: g)
+        bump(Self.keyStatsNg, by: ng)
+    }
+
+    public func recordBatchConversions(totalAdded: Int, sh: Int = 0, ch: Int = 0, o: Int = 0, g: Int = 0, ng: Int = 0) {
+        addToStoredStats(total: totalAdded, sh: sh, ch: ch, o: o, g: g, ng: ng)
         reloadStats()
     }
 

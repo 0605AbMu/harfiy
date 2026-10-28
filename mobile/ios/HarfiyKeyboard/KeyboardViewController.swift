@@ -17,9 +17,8 @@ public class KeyboardViewController: KeyboardInputViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Mark keyboard extension active in shared settings
-        UserDefaults(suiteName: HarfiySettings.appGroupIdentifier)?.set(true, forKey: HarfiySettings.keyKeyboardExtensionActive)
-        UserDefaults(suiteName: HarfiySettings.appGroupIdentifier)?.set(Date().timeIntervalSince1970, forKey: HarfiySettings.keyKeyboardLastOpened)
+        // Mark keyboard extension active in shared settings (written only the first time)
+        HarfiySettings.shared.markKeyboardExtensionActive()
 
         // Ensure extension view does not clip content bounds
         view.clipsToBounds = false
@@ -63,9 +62,6 @@ public class KeyboardViewController: KeyboardInputViewController {
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Mark keyboard extension active in shared settings
-        UserDefaults(suiteName: HarfiySettings.appGroupIdentifier)?.set(true, forKey: HarfiySettings.keyKeyboardExtensionActive)
-        UserDefaults(suiteName: HarfiySettings.appGroupIdentifier)?.set(Date().timeIntervalSince1970, forKey: HarfiySettings.keyKeyboardLastOpened)
 
         // Refresh preferences from shared app group (e.g. if changed in HarfiyApp)
         applyNativeSettings()
@@ -80,12 +76,18 @@ public class KeyboardViewController: KeyboardInputViewController {
         let context = state.keyboardContext
         if context.keyboardType == .emojis {
             setKeyboardType(.alphabetic(.auto))
-        } else if context.keyboardType.isAlphabetic {
+        } else if context.keyboardType.isAlphabetic, context.keyboardType != context.preferredKeyboardType {
             setKeyboardType(context.preferredKeyboardType)
         }
 
         // Trigger native space bar language animation ("Özbek tili" -> "böşliq")
         HarfiySpaceState.shared.triggerAnimation(isAlphabetic: context.keyboardType.isAlphabetic)
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Persist conversion counts that are still buffered in memory.
+        HarfiySettings.shared.flushPendingStats()
     }
 
     public override func viewWillSetupKeyboardView() {
@@ -134,6 +136,7 @@ public class KeyboardViewController: KeyboardInputViewController {
         // Read the context on the next run loop, once the proxy has caught up.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // The context is passed lazily: reading it is a round-trip to the host app.
             (self.services.actionHandler as? HarfiyActionHandler)?
                 .selectionDidChange(contextBeforeInput: self.textDocumentProxy.documentContextBeforeInput)
 

@@ -10,13 +10,44 @@
 import SwiftUI
 import KeyboardKit
 
+/// Maximum number of emojis kept in the persisted "frequent" category.
+private let harfiyFrequentEmojiLimit = 32
+
+/// A category together with the emojis it shows.
+private struct HarfiyEmojiSection: Identifiable {
+    let category: EmojiCategory
+    let emojis: [Emoji]
+
+    var id: String { category.id }
+}
+
+/// Emoji sections of one emoji-keyboard session, built once.
+///
+/// Only `.frequent` lives in UserDefaults (every other category is a static list), so reading the
+/// categories in the SwiftUI `body` would repeat that decode on every render pass.
+private final class HarfiyEmojiSections: ObservableObject {
+    let sections: [HarfiyEmojiSection]
+
+    init(categories: [EmojiCategory]) {
+        // Trim lists persisted before the limit existed (KeyboardKit defaults to 10 000 entries).
+        if EmojiCategory.frequentEmojis.count > harfiyFrequentEmojiLimit {
+            EmojiCategory.frequentEmojis = Array(EmojiCategory.frequentEmojis.prefix(harfiyFrequentEmojiLimit))
+        }
+        sections = categories.compactMap { category in
+            let emojis = category.emojis
+            return emojis.isEmpty ? nil : HarfiyEmojiSection(category: category, emojis: emojis)
+        }
+    }
+}
+
 public struct HarfiyEmojiKeyboard: View {
     public weak var controller: KeyboardInputViewController?
     @ObservedObject var keyboardContext: KeyboardContext
 
     @State private var selectedCategory: EmojiCategory = .smileysAndPeople
+    @StateObject private var store = HarfiyEmojiSections(categories: HarfiyEmojiKeyboard.categories)
 
-    private let categories: [EmojiCategory] = [
+    private static let categories: [EmojiCategory] = [
         .frequent,
         .smileysAndPeople,
         .animalsAndNature,
@@ -41,28 +72,25 @@ public struct HarfiyEmojiKeyboard: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(categories, id: \.id) { category in
-                            let emojis = category.emojis
-                            if !emojis.isEmpty {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(categoryTitle(category))
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 14)
-                                        .id(category.id)
+                        ForEach(store.sections) { section in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(categoryTitle(section.category))
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 14)
+                                    .id(section.id)
 
-                                    LazyVGrid(columns: columns, spacing: 8) {
-                                        ForEach(emojis, id: \.char) { emoji in
-                                            Button(action: { selectEmoji(emoji) }) {
-                                                Text(emoji.char)
-                                                    .font(.system(size: 28))
-                                                    .frame(width: 38, height: 38)
-                                            }
-                                            .buttonStyle(PlainButtonStyle())
+                                LazyVGrid(columns: columns, spacing: 8) {
+                                    ForEach(section.emojis, id: \.char) { emoji in
+                                        Button(action: { selectEmoji(emoji) }) {
+                                            Text(emoji.char)
+                                                .font(.system(size: 28))
+                                                .frame(width: 38, height: 38)
                                         }
+                                        .buttonStyle(PlainButtonStyle())
                                     }
-                                    .padding(.horizontal, 8)
                                 }
+                                .padding(.horizontal, 8)
                             }
                         }
                     }
@@ -94,7 +122,7 @@ public struct HarfiyEmojiKeyboard: View {
                 Spacer(minLength: 2)
 
                 // Category Tabs
-                ForEach(categories, id: \.id) { cat in
+                ForEach(Self.categories, id: \.id) { cat in
                     Button(action: { selectedCategory = cat }) {
                         Text(cat.emojiIcon)
                             .font(.system(size: 17))
@@ -143,7 +171,7 @@ public struct HarfiyEmojiKeyboard: View {
 
     private func selectEmoji(_ emoji: Emoji) {
         controller?.textDocumentProxy.insertText(emoji.char)
-        EmojiCategory.addEmoji(emoji, to: .frequent)
+        EmojiCategory.addEmoji(emoji, to: .frequent, maxCount: harfiyFrequentEmojiLimit)
         controller?.services.feedbackService.triggerHapticFeedback(.lightImpact)
     }
 
