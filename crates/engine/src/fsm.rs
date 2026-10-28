@@ -1,6 +1,6 @@
 //! Finite State Machine for Harfiy.
 
-use crate::rules::{is_first_trigger, is_word_delimiter, match_rule};
+use crate::rules::{is_first_trigger, is_word_delimiter, match_rule, match_single};
 
 /// Action instructed by the engine to the platform emitter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +149,15 @@ fn get_original_pair_str(prev: char, curr: char) -> Option<&'static str> {
         ('N', 'g') => Some("Ng"),
         ('N', 'G') => Some("NG"),
 
+        _ => None,
+    }
+}
+
+/// Map a single convertible char to its exact original static string representation for Instant Undo.
+fn get_original_single_str(c: char) -> Option<&'static str> {
+    match c {
+        'õ' => Some("õ"),
+        'Õ' => Some("Õ"),
         _ => None,
     }
 }
@@ -305,6 +314,20 @@ impl HarfiyEngine {
 
         match self.state {
             FsmState::Idle => {
+                if let Some(rule) = match_single(c) {
+                    let undo_str = get_original_single_str(c).unwrap_or(rule.replacement);
+                    self.state = FsmState::JustTransformed {
+                        undo_replacement: undo_str,
+                    };
+                    for ch in rule.replacement.chars() {
+                        self.push_history(ch);
+                    }
+                    return KeyAction::Transform {
+                        backspaces_count: 0,
+                        replacement: rule.replacement,
+                    };
+                }
+
                 self.push_history(c);
                 if is_first_trigger(c, self.config.enable_ng) {
                     self.state = FsmState::WaitingForSecondChar { prev_char: c };
@@ -326,6 +349,18 @@ impl HarfiyEngine {
                     }
                     KeyAction::Transform {
                         backspaces_count: 1,
+                        replacement: rule.replacement,
+                    }
+                } else if let Some(rule) = match_single(c) {
+                    let undo_str = get_original_single_str(c).unwrap_or(rule.replacement);
+                    self.state = FsmState::JustTransformed {
+                        undo_replacement: undo_str,
+                    };
+                    for ch in rule.replacement.chars() {
+                        self.push_history(ch);
+                    }
+                    KeyAction::Transform {
+                        backspaces_count: 0,
                         replacement: rule.replacement,
                     }
                 } else {
@@ -753,6 +788,55 @@ mod tests {
             KeyAction::Transform {
                 backspaces_count: 1,
                 replacement: "ş",
+            }
+        );
+    }
+
+    #[test]
+    fn test_o_tilde_and_single_conversion() {
+        let mut engine = HarfiyEngine::default();
+
+        // 1. Single 'õ' -> 'ö' with backspaces_count: 0
+        assert_eq!(
+            engine.process(InputEvent::Char('õ')),
+            KeyAction::Transform {
+                backspaces_count: 0,
+                replacement: "ö",
+            }
+        );
+        // Instant undo restores 'õ'
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "õ",
+            }
+        );
+
+        // 2. Single 'Õ' -> 'Ö' with backspaces_count: 0
+        assert_eq!(
+            engine.process(InputEvent::Char('Õ')),
+            KeyAction::Transform {
+                backspaces_count: 0,
+                replacement: "Ö",
+            }
+        );
+        // Instant undo restores 'Õ'
+        assert_eq!(
+            engine.process(InputEvent::Special(SpecialKey::Backspace)),
+            KeyAction::Transform {
+                backspaces_count: 1,
+                replacement: "Õ",
+            }
+        );
+
+        // 3. 's' then 'õ' (typing after a first-trigger character)
+        assert_eq!(engine.process(InputEvent::Char('s')), KeyAction::PassThrough);
+        assert_eq!(
+            engine.process(InputEvent::Char('õ')),
+            KeyAction::Transform {
+                backspaces_count: 0,
+                replacement: "ö",
             }
         );
     }

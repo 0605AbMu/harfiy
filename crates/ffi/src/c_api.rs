@@ -101,6 +101,8 @@ fn map_action(action: KeyAction) -> HarfiyActionResult {
                 "nG" => c"nG".as_ptr(),
                 "Ng" => c"Ng".as_ptr(),
                 "NG" => c"NG".as_ptr(),
+                "õ" => c"õ".as_ptr(),
+                "Õ" => c"Õ".as_ptr(),
                 _ => c"".as_ptr(),
             };
 

@@ -193,6 +193,14 @@ public final class HarfiyEngineBridge {
         }
     }
 
+    private static func matchSingle(_ c: Character) -> (replacement: String, original: String)? {
+        switch c {
+        case "õ": return ("ö", "õ")
+        case "Õ": return ("Ö", "Õ")
+        default: return nil
+        }
+    }
+
     /// Pure Swift fallback in case binary framework is not yet linked or in preview mode.
     private func fallbackProcess(_ char: Character) -> HarfiyAction {
         // Reset undo state if user typed any character
@@ -214,6 +222,13 @@ public final class HarfiyEngineBridge {
                     fallbackPushHistory(ch)
                 }
                 return .transform(backspacesCount: 1, replacement: matched.replacement)
+            } else if let single = Self.matchSingle(char) {
+                fallbackPrevChar = nil
+                fallbackJustTransformedUndo = single.original
+                for ch in single.replacement {
+                    fallbackPushHistory(ch)
+                }
+                return .transform(backspacesCount: 0, replacement: single.replacement)
             } else {
                 fallbackPushHistory(char)
                 if Self.isFirstTrigger(char, enableNg: isEnableNg) {
@@ -224,6 +239,14 @@ public final class HarfiyEngineBridge {
                 return .passThrough
             }
         } else {
+            if let single = Self.matchSingle(char) {
+                fallbackJustTransformedUndo = single.original
+                for ch in single.replacement {
+                    fallbackPushHistory(ch)
+                }
+                return .transform(backspacesCount: 0, replacement: single.replacement)
+            }
+
             fallbackPushHistory(char)
             if Self.isFirstTrigger(char, enableNg: isEnableNg) {
                 fallbackPrevChar = char
@@ -289,6 +312,13 @@ public final class HarfiyEngineBridge {
             }
 
             if !matched {
+                if let single = Self.matchSingle(curr) {
+                    result.append(single.replacement)
+                    count += 1
+                    i += 1
+                    continue
+                }
+
                 // Smart apostrophe (hamza / tutuq belgisi between letters, e.g. ma'no -> maʻno)
                 if smartApostrophe && (curr == "'" || curr == "`") {
                     let prevIsLetter = (i > 0) && chars[i - 1].isLetter
