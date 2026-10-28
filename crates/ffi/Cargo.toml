@@ -12,6 +12,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 harfiy-engine = { path = "../engine" }
+
+# JNI is only needed for the Android build; keep it out of the iOS static library.
+[target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21", default-features = false }
 
 [dev-dependencies]

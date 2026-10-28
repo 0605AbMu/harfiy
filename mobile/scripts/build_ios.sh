@@ -14,17 +14,20 @@ XCFRAMEWORK_PATH="$OUTPUT_DIR/HarfiyCore.xcframework"
 
 echo "==> 🍏 Harfiy iOS XCFramework yig'ish boshlandi..."
 
+# Rust'ning minimal iOS versiyasini Xcode loyihasi bilan moslashtirish
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
+
 # 1. Targetlarni tekshirish va o'rnatish
 echo "==> Rust iOS targetlarini tekshirish..."
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
 # 2. Qurilma (Device arm64) uchun yig'ish
 echo "==> 1/2: aarch64-apple-ios (iPhone jismoniy qurilmasi) uchun kompilyatsiya..."
-cargo rustc -p harfiy-ffi --target aarch64-apple-ios --crate-type staticlib --release
+cargo rustc -p harfiy-ffi --target aarch64-apple-ios --crate-type staticlib --profile ios
 
 # 3. Simulyator (Simulator arm64) uchun yig'ish
 echo "==> 2/2: aarch64-apple-ios-sim (Apple Silicon Simulator) uchun kompilyatsiya..."
-cargo rustc -p harfiy-ffi --target aarch64-apple-ios-sim --crate-type staticlib --release
+cargo rustc -p harfiy-ffi --target aarch64-apple-ios-sim --crate-type staticlib --profile ios
 
 # 4. Eski XCFrameworkni tozalash va papkalar yaratish
 mkdir -p "$OUTPUT_DIR"
@@ -34,11 +37,11 @@ mkdir -p "$XCFRAMEWORK_PATH/ios-arm64/Headers"
 mkdir -p "$XCFRAMEWORK_PATH/ios-arm64-simulator/Headers"
 
 # 5. Fayllarni ko'chirish
-cp "$WORKSPACE_ROOT/target/aarch64-apple-ios/release/libharfiy_ffi.a" "$XCFRAMEWORK_PATH/ios-arm64/libharfiy_ffi.a"
+cp "$WORKSPACE_ROOT/target/aarch64-apple-ios/ios/libharfiy_ffi.a" "$XCFRAMEWORK_PATH/ios-arm64/libharfiy_ffi.a"
 cp "$WORKSPACE_ROOT/crates/ffi/include/harfiy.h" "$XCFRAMEWORK_PATH/ios-arm64/Headers/"
 cp "$WORKSPACE_ROOT/crates/ffi/include/module.modulemap" "$XCFRAMEWORK_PATH/ios-arm64/Headers/"
 
-cp "$WORKSPACE_ROOT/target/aarch64-apple-ios-sim/release/libharfiy_ffi.a" "$XCFRAMEWORK_PATH/ios-arm64-simulator/libharfiy_ffi.a"
+cp "$WORKSPACE_ROOT/target/aarch64-apple-ios-sim/ios/libharfiy_ffi.a" "$XCFRAMEWORK_PATH/ios-arm64-simulator/libharfiy_ffi.a"
 cp "$WORKSPACE_ROOT/crates/ffi/include/harfiy.h" "$XCFRAMEWORK_PATH/ios-arm64-simulator/Headers/"
 cp "$WORKSPACE_ROOT/crates/ffi/include/module.modulemap" "$XCFRAMEWORK_PATH/ios-arm64-simulator/Headers/"
 
