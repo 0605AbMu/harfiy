@@ -191,7 +191,6 @@
 			children = (
 				FBF1DBBFCB17E83BABC1E49F /* HarfiyKeyboardUITests.swift */,
 			);
-			name = HarfiyUITests;
 			path = HarfiyUITests;
 			sourceTree = "<group>";
 		};
@@ -286,7 +285,7 @@
 			);
 			mainGroup = 010000022C00000100000001;
 			packageReferences = (
-				E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */,
+				E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */,
 			);
 			productRefGroup = 010000062C00000100000001 /* Products */;
 			projectDirPath = "";
@@ -538,7 +537,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HarfiyApp/HarfiyApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -550,8 +549,12 @@
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uz.harfiy.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -561,7 +564,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HarfiyApp/HarfiyApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -573,8 +576,12 @@
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uz.harfiy.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -583,7 +590,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = HarfiyKeyboard/HarfiyKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
@@ -605,7 +612,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = HarfiyKeyboard/HarfiyKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
@@ -664,7 +671,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */ = {
+		E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/KeyboardKit;
 		};
@@ -673,7 +680,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		E30000022C00000100000001 /* KeyboardKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */;
+			package = E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */;
 			productName = KeyboardKit;
 		};
 /* End XCSwiftPackageProductDependency section */

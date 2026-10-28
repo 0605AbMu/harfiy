@@ -9,7 +9,7 @@
 ---
 
 ### 1. Overview
-Harfiy ("we", "our", or "app") is dedicated to protecting user privacy. Harfiy is an offline text input utility designed for Uzbek Latin script. It allows users to automatically transform digraph combinations ("sh", "ch", "o'", "g'") into modern Uzbek Latin letters ("ş", "ç", "ö", "ğ") as they type using their default device keyboard (e.g., Gboard, Samsung Keyboard).
+Harfiy ("we", "our", or "app") is dedicated to protecting user privacy. Harfiy is an offline text input utility designed for Uzbek Latin script. It allows users to automatically transform digraph combinations ("sh", "ch", "o'", "g'") into modern Uzbek Latin letters ("ş", "ç", "ö", "ğ") as they type. On Android it works with the default device keyboard (e.g., Gboard, Samsung Keyboard); on iOS it is provided as its own custom keyboard (see section 2a).
 
 ---
 
@@ -19,6 +19,17 @@ To deliver its core input transformation feature, Harfiy uses Android's **Access
 * **Purpose:** Harfiy uses the AccessibilityService solely to detect input events (`TYPE_VIEW_TEXT_CHANGED`, `TYPE_VIEW_FOCUSED`) in text fields and convert specific letter combinations ("sh", "ch", "o'", "g'") into standard Uzbek Latin characters ("ş", "ç", "ö", "ğ").
 * **Data Access & Privacy:** The app does **NOT** log, record, harvest, or transmit any sensitive user data, including passwords, credit card numbers, personal messages, or contact lists.
 * **100% Offline (No Internet Permission):** Harfiy does **NOT** request or possess the `android.permission.INTERNET` network permission. Technically and architecturaly, the application cannot transmit any data over the internet or communicate with external servers. All processing is executed strictly on-device using a high-performance local Rust engine.
+
+---
+
+### 2a. iOS Keyboard Extension
+On iPhone and iPad, Harfiy is provided as a custom keyboard that the user enables in `Settings -> General -> Keyboard -> Keyboards`.
+
+* **No Full Access:** The Harfiy keyboard does **NOT** request "Allow Full Access". iOS therefore runs it in a sandbox with no network access, so it cannot send anything you type off the device.
+* **On-device only:** Each keystroke is converted in memory by the local Rust engine and is never logged, stored, or transmitted. The keyboard keeps only the last one or two characters needed to recognise a letter pair and discards them as you continue typing.
+* **Secure fields:** iOS automatically replaces third-party keyboards with the system keyboard in password and other secure text fields, so Harfiy never sees them.
+* **Local settings and counter:** Your preferences and the conversion counter are stored only on your device, in a storage area shared between the Harfiy app and its keyboard. They are deleted when you remove the app.
+* **No network use:** The Harfiy app makes no network requests. Links to the website or Telegram open only when you tap them.
 
 ---
 
@@ -45,6 +56,7 @@ Users retain full control at all times:
 1. Toggle the master switch inside the Harfiy app;
 2. Toggle the Harfiy Quick Settings tile in the system notification shade;
 3. Disable or uninstall the service via Android `Settings -> Accessibility`.
+4. On iOS, remove the Harfiy keyboard in `Settings -> General -> Keyboard -> Keyboards`, or delete the app.
 
 ---
 
