@@ -19,7 +19,7 @@ mobile/
     ├── app/
     │   ├── src/main/jniLibs/  # .so kutubxonalari (avtomatik yaratiladi)
     │   └── src/main/kotlin/uz/harfiy/keyboard/
-    │       ├── HarfiyEngineBridge.kt          # JNI Bridge
+    │       ├── HarfiyEngine.kt                # JNI Bridge
     │       ├── HarfiyAccessibilityService.kt  # Tizim klaviaturasi (Gboard, Samsung) ustida ishlovchi xizmat
     │       └── MainActivity.kt                # Boshqaruv paneli va sinov maydoni
 ```

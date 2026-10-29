@@ -5,17 +5,6 @@
     native <methods>;
 }
 
-# Preserve Harfiy Engine Bridge & JNI classes
--keep class uz.harfiy.keyboard.HarfiyEngineBridge {
-    *;
-}
--keep class uz.harfiy.keyboard.HarfiyAction {
-    *;
-}
--keep class uz.harfiy.keyboard.HarfiyAction$* {
-    *;
-}
-
 # Preserve Accessibility Service and Tile Service entrypoints
 -keep public class uz.harfiy.keyboard.HarfiyAccessibilityService {
     public *;

@@ -54,7 +54,6 @@ class HarfiyTileService : TileService() {
             val currentlyPaused = prefs.getBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, false)
             val newPaused = !currentlyPaused
             prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_IS_PAUSED, newPaused) }
-            sendBroadcast(Intent(HarfiyAccessibilityService.ACTION_PREFS_CHANGED).setPackage(packageName))
             updateTileState()
         } else {
             // Service is not enabled in Android settings: Launch app to guide activation
