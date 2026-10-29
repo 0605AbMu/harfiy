@@ -79,6 +79,16 @@ pub fn match_rule(prev: char, curr: char, enable_ng: bool) -> Option<ConversionM
     }
 }
 
+/// Check if a single character matches an auto-conversion rule (e.g. 1993 orthography Õ/õ -> Ö/ö).
+#[inline]
+pub fn match_single(c: char) -> Option<ConversionMatch> {
+    match c {
+        'õ' => Some(ConversionMatch { replacement: "ö" }),
+        'Õ' => Some(ConversionMatch { replacement: "Ö" }),
+        _ => None,
+    }
+}
+
 /// A single replacement planned by the batch converter: the characters `start..end`
 /// (indices into the input `&[char]`) are replaced by `replacement`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +119,16 @@ pub fn plan_edits(chars: &[char], enable_ng: bool, smart_apostrophe: bool) -> Ve
                 replacement: m.replacement,
             });
             i += 2;
+            continue;
+        }
+
+        if let Some(m) = match_single(curr) {
+            edits.push(Edit {
+                start: i,
+                end: i + 1,
+                replacement: m.replacement,
+            });
+            i += 1;
             continue;
         }
 
@@ -191,6 +211,14 @@ mod tests {
     }
 
     #[test]
+    fn test_match_single() {
+        assert_eq!(match_single('õ').unwrap().replacement, "ö");
+        assert_eq!(match_single('Õ').unwrap().replacement, "Ö");
+        assert!(match_single('o').is_none());
+        assert!(match_single('a').is_none());
+    }
+
+    #[test]
     fn test_ng_rules() {
         assert!(match_rule('n', 'g', false).is_none());
         assert_eq!(match_rule('n', 'g', true).unwrap().replacement, "ñ");
@@ -200,10 +228,10 @@ mod tests {
 
     #[test]
     fn test_convert_text() {
-        let input = "Shahar ko'chasida choyxona va g'isht bor. A'lo darajada!";
+        let input = "Shahar ko'chasida choyxona va g'isht bor. A'lo darajada! Õzbekiston va õrtoq.";
         let (out, count) = convert_text(input, false, true);
-        assert_eq!(out, "Şahar köçasida çoyxona va ğişt bor. Aʻlo darajada!");
-        assert_eq!(count, 7);
+        assert_eq!(out, "Şahar köçasida çoyxona va ğişt bor. Aʻlo darajada! Özbekiston va örtoq.");
+        assert_eq!(count, 9);
     }
 
     #[test]

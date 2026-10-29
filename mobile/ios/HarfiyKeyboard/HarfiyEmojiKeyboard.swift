@@ -2,21 +2,58 @@
 //  HarfiyEmojiKeyboard.swift
 //  HarfiyKeyboard
 //
-//  Full-Featured, Native-Performance Emoji Keyboard for Harfiy on iOS.
-//  Provides categorized Unicode 15+ emojis, quick category jump tabs,
-//  an ABC return button, and backspace key with haptic feedback.
+//  Native-Performance Emoji Keyboard for Harfiy on iOS.
+//  Provides categorized Unicode emojis, frequent emojis, quick category jump tabs,
+//  an ABC return button, and backspace key using native KeyboardKit feedback.
 //
 
 import SwiftUI
 import KeyboardKit
+
+/// Maximum number of emojis kept in the persisted "frequent" category.
+private let harfiyFrequentEmojiLimit = 32
+
+/// A category together with the emojis it shows.
+private struct HarfiyEmojiSection: Identifiable {
+    let category: EmojiCategory
+    let emojis: [Emoji]
+
+    var id: String { category.id }
+}
+
+/// Emoji sections of one emoji-keyboard session, built once.
+///
+/// Only `.frequent` lives in UserDefaults (every other category is a static list), so reading the
+/// categories in the SwiftUI `body` would repeat that decode on every render pass.
+private final class HarfiyEmojiSections: ObservableObject {
+    let sections: [HarfiyEmojiSection]
+
+    init(categories: [EmojiCategory]) {
+        let signpost = HarfiyPerf.signposter.beginInterval("emojiSections")
+        defer {
+            HarfiyPerf.signposter.endInterval("emojiSections", signpost)
+            HarfiyPerf.emitAvailableMemory()
+        }
+        // Trim lists persisted before the limit existed (KeyboardKit defaults to 10 000 entries).
+        if EmojiCategory.frequentEmojis.count > harfiyFrequentEmojiLimit {
+            EmojiCategory.frequentEmojis = Array(EmojiCategory.frequentEmojis.prefix(harfiyFrequentEmojiLimit))
+        }
+        sections = categories.compactMap { category in
+            let emojis = category.emojis
+            return emojis.isEmpty ? nil : HarfiyEmojiSection(category: category, emojis: emojis)
+        }
+    }
+}
 
 public struct HarfiyEmojiKeyboard: View {
     public weak var controller: KeyboardInputViewController?
     @ObservedObject var keyboardContext: KeyboardContext
 
     @State private var selectedCategory: EmojiCategory = .smileysAndPeople
+    @StateObject private var store = HarfiyEmojiSections(categories: HarfiyEmojiKeyboard.categories)
 
-    private let categories: [EmojiCategory] = [
+    private static let categories: [EmojiCategory] = [
+        .frequent,
         .smileysAndPeople,
         .animalsAndNature,
         .foodAndDrink,
@@ -40,16 +77,16 @@ public struct HarfiyEmojiKeyboard: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(categories, id: \.id) { category in
+                        ForEach(store.sections) { section in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(categoryTitle(category))
+                                Text(categoryTitle(section.category))
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal, 14)
-                                    .id(category.id)
+                                    .id(section.id)
 
                                 LazyVGrid(columns: columns, spacing: 8) {
-                                    ForEach(category.emojis, id: \.char) { emoji in
+                                    ForEach(section.emojis, id: \.char) { emoji in
                                         Button(action: { selectEmoji(emoji) }) {
                                             Text(emoji.char)
                                                 .font(.system(size: 28))
@@ -90,7 +127,7 @@ public struct HarfiyEmojiKeyboard: View {
                 Spacer(minLength: 2)
 
                 // Category Tabs
-                ForEach(categories, id: \.id) { cat in
+                ForEach(Self.categories, id: \.id) { cat in
                     Button(action: { selectedCategory = cat }) {
                         Text(cat.emojiIcon)
                             .font(.system(size: 17))
@@ -119,11 +156,12 @@ public struct HarfiyEmojiKeyboard: View {
             .padding(.vertical, 6)
             .background(Color(UIColor.secondarySystemBackground))
         }
-        .frame(height: 255)
+        .frame(height: keyboardContext.interfaceOrientation.isLandscape ? 160 : 255)
     }
 
     private func categoryTitle(_ category: EmojiCategory) -> String {
         switch category {
+        case .frequent: return "TEZ-TEZ ISHLATILADIGANLAR"
         case .smileysAndPeople: return "KULGICHLAR VA ODAMLAR"
         case .animalsAndNature: return "HAYVONOT VA TABIAT"
         case .foodAndDrink: return "YEMAK VA ICHIMLIKLAR"
@@ -138,20 +176,17 @@ public struct HarfiyEmojiKeyboard: View {
 
     private func selectEmoji(_ emoji: Emoji) {
         controller?.textDocumentProxy.insertText(emoji.char)
-        EmojiCategory.addEmoji(emoji, to: .frequent)
-        #if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
+        EmojiCategory.addEmoji(emoji, to: .frequent, maxCount: harfiyFrequentEmojiLimit)
+        controller?.services.feedbackService.triggerHapticFeedback(.lightImpact)
     }
 
     private func deleteBackward() {
         controller?.textDocumentProxy.deleteBackward()
-        #if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
+        controller?.services.feedbackService.triggerHapticFeedback(.lightImpact)
     }
 
     private func returnToTextKeyboard() {
+        (controller?.services.actionHandler as? HarfiyActionHandler)?.resetEngine()
         controller?.state.keyboardContext.keyboardType = .alphabetic(.auto)
         controller?.setKeyboardType(.alphabetic(.auto))
     }

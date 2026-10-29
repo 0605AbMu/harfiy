@@ -20,14 +20,11 @@ public struct ContentView: View {
     @ObservedObject var settings = HarfiySettings.shared
     @StateObject private var keyboardStatus = KeyboardStatusContext(bundleId: "uz.harfiy.keyboard.*")
     @State private var practiceText: String = ""
-    @State private var isProcessingLiveChange: Bool = false
     @State private var showingWizard: Bool = false
     @State private var showingClearStatsAlert: Bool = false
     @State private var toastMessage: String? = nil
     @State private var isKeyboardActiveInSystem: Bool = false
     @FocusState private var isFieldFocused: Bool
-
-    private let engine = HarfiyEngineBridge()
 
     public init() {}
 
@@ -85,7 +82,7 @@ public struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showingWizard) {
-                SetupWizardView(isPresented: $showingWizard)
+                SetupWizardView(isPresented: $showingWizard, initialStep: isKeyboardActiveInSystem ? 1 : 2)
             }
             .alert(isPresented: $showingClearStatsAlert) {
                 Alert(
@@ -100,13 +97,16 @@ public struct ContentView: View {
             }
             .onAppear {
                 checkKeyboardSystemStatus()
-                if !settings.hasCompletedWizard {
+                if !isKeyboardActiveInSystem {
                     showingWizard = true
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 checkKeyboardSystemStatus()
                 settings.reloadStats()
+                if !isKeyboardActiveInSystem {
+                    showingWizard = true
+                }
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -178,7 +178,13 @@ public struct ContentView: View {
 
                 Spacer()
 
-                Button(action: openSettings) {
+                Button(action: {
+                    if !isKeyboardActiveInSystem {
+                        showingWizard = true
+                    } else {
+                        openSettings()
+                    }
+                }) {
                     HStack(spacing: 4) {
                         Text(isKeyboardActiveInSystem ? "Sozlash" : "Yoqish")
                             .font(.system(size: 13, weight: .bold))
@@ -230,18 +236,7 @@ public struct ContentView: View {
 
                 settingsDivider
 
-                // Setting 3: Smart Apostrophe
-                settingToggleRow(
-                    icon: "✍️",
-                    iconBg: "#FEF3C7",
-                    title: "Aqlli apostrof (oʻ, gʻ)",
-                    subtitle: "o' va g' uchun to‘g‘ri okina/tutuq belgisini qo‘yish",
-                    isOn: $settings.smartApostrophe
-                )
-
-                settingsDivider
-
-                // Setting 4: Haptic Feedback
+                // Setting 3: Haptic Feedback
                 settingToggleRow(
                     icon: "📳",
                     iconBg: "#ECFDF5",
@@ -252,7 +247,7 @@ public struct ContentView: View {
 
                 settingsDivider
 
-                // Setting 5: Sound Feedback
+                // Setting 4: Sound Feedback
                 settingToggleRow(
                     icon: "🔊",
                     iconBg: "#FDF2F8",
@@ -272,12 +267,15 @@ public struct ContentView: View {
                             Text("Boshlang‘ich sozlash ustasi (Wizard)")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(Color(hex: "#0F172A"))
+                                .multilineTextAlignment(.leading)
 
                             Text("Klaviaturani yoqish va ishlatish bo‘yicha qo‘llanma")
                                 .font(.system(size: 12))
                                 .foregroundColor(Color(hex: "#64748B"))
+                                .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         Spacer()
 
@@ -335,9 +333,6 @@ public struct ContentView: View {
                         .frame(minHeight: 90)
                         .padding(8)
                         .background(Color.clear)
-                        .onChange(of: practiceText) { newValue in
-                            handleLiveTextChange(newValue)
-                        }
                 }
                 .background(Color(hex: "#F8FAFC"))
                 .cornerRadius(14)
@@ -622,11 +617,14 @@ public struct ContentView: View {
                     Text(title)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(Color(hex: "#0F172A"))
+                        .multilineTextAlignment(.leading)
 
                     Text(subtitle)
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "#64748B"))
+                        .multilineTextAlignment(.leading)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer()
 
@@ -672,31 +670,16 @@ public struct ContentView: View {
 
     private func convertPracticeText() {
         guard !practiceText.isEmpty else { return }
-        engine.setEnableNg(settings.enableNg)
-        let (converted, count) = engine.convertText(practiceText, smartApostrophe: settings.smartApostrophe)
+        let (converted, count) = HarfiyEngineBridge.convertText(
+            practiceText,
+            enableNg: settings.enableNg,
+            smartApostrophe: true
+        )
         practiceText = converted
         if count > 0 {
             settings.recordBatchConversions(totalAdded: count)
         }
         showToast("Matn to‘liq o‘girildi!")
-    }
-
-    private func handleLiveTextChange(_ newValue: String) {
-        guard !isProcessingLiveChange else { return }
-        guard !newValue.isEmpty else { return }
-
-        engine.setEnableNg(settings.enableNg)
-        let (converted, count) = engine.convertText(newValue, smartApostrophe: settings.smartApostrophe)
-        if converted != newValue {
-            isProcessingLiveChange = true
-            practiceText = converted
-            if count > 0 {
-                settings.recordBatchConversions(totalAdded: count)
-            }
-            DispatchQueue.main.async {
-                self.isProcessingLiveChange = false
-            }
-        }
     }
 
     private func copyPracticeText() {
@@ -719,7 +702,13 @@ public struct ContentView: View {
 
     private func checkKeyboardSystemStatus() {
         keyboardStatus.refresh()
-        self.isKeyboardActiveInSystem = keyboardStatus.isKeyboardEnabled || settings.hasCompletedWizard
+        var enabled = keyboardStatus.isKeyboardEnabled || keyboardStatus.isKeyboardActive
+        if !enabled {
+            enabled = HarfiySettings.isKeyboardActiveInSystem()
+        }
+        withAnimation {
+            self.isKeyboardActiveInSystem = enabled
+        }
     }
 }
 

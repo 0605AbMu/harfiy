@@ -7,18 +7,22 @@
 
 import SwiftUI
 import UIKit
+import KeyboardKit
 
 public struct SetupWizardView: View {
     @ObservedObject var settings = HarfiySettings.shared
     @Binding var isPresented: Bool
 
+    @StateObject private var keyboardStatus = KeyboardStatusContext(bundleId: "uz.harfiy.keyboard.*")
     @State private var currentStep: Int = 1
+    @State private var isKeyboardEnabled: Bool = false
+    @State private var showActivationAlert: Bool = false
     @State private var testInput: String = ""
     @State private var hasTestedSuccessfully: Bool = false
-    @State private var isProcessingLiveChange: Bool = false
     @FocusState private var isTestFieldFocused: Bool
+    /// Created once (@State keeps the first instance); a publisher built in `body` is replaced on every render.
+    @State private var statusPoll = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    private let engine = HarfiyEngineBridge()
     private let totalSteps = 4
 
     public init(isPresented: Binding<Bool>, initialStep: Int = 1) {
@@ -101,6 +105,26 @@ public struct SetupWizardView: View {
                     Button("Tayyor") { isTestFieldFocused = false }
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(Color(hex: "#2563EB"))
+                }
+            }
+            .alert(isPresented: $showActivationAlert) {
+                Alert(
+                    title: Text("Klaviatura faollashtirilmagan"),
+                    message: Text("Keyingi qadamga o‘tish uchun telefoningiz Sozlamalariga kirib, «Harfiy» klaviaturasini yoqishingiz kerak."),
+                    primaryButton: .default(Text("Sozlamalarni ochish"), action: openSystemSettings),
+                    secondaryButton: .cancel(Text("Tushunarli"))
+                )
+            }
+            .onAppear {
+                refreshKeyboardStatus()
+            }
+            // didBecomeActive also fires after willEnterForeground, so one observer is enough.
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                refreshKeyboardStatus()
+            }
+            .onReceive(statusPoll) { _ in
+                if currentStep == 2 {
+                    refreshKeyboardStatus()
                 }
             }
         }
@@ -186,6 +210,55 @@ public struct SetupWizardView: View {
                     .font(.system(size: 14))
                     .foregroundColor(Color(hex: "#64748B"))
                     .multilineTextAlignment(.center)
+            }
+
+            // Live Activation Status Pill
+            if isKeyboardEnabled {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(Color(hex: "#059669"))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Klaviatura faollashtirildi!")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color(hex: "#059669"))
+                        Text("Ajoyib, endi keyingi qadamga o‘tishingiz mumkin.")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "#065F46"))
+                    }
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color(hex: "#ECFDF5"))
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color(hex: "#A7F3D0"), lineWidth: 1)
+                )
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(Color(hex: "#D97706"))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Klaviatura hali yoqilmagan")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color(hex: "#B45309"))
+                        Text("Davom etish uchun avval Sozlamalardan Harfiyni yoqing.")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "#92400E"))
+                    }
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color(hex: "#FEF3C7"))
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color(hex: "#FDE68A"), lineWidth: 1)
+                )
             }
 
             // Steps Guide Card
@@ -305,20 +378,6 @@ public struct SetupWizardView: View {
                         let lower = val.lowercased()
                         if lower.contains("ş") || lower.contains("ç") || lower.contains("ö") || lower.contains("ğ") || lower.contains("ñ") {
                             hasTestedSuccessfully = true
-                        } else if !isProcessingLiveChange && !val.isEmpty {
-                            engine.setEnableNg(settings.enableNg)
-                            let (converted, count) = engine.convertText(val, smartApostrophe: settings.smartApostrophe)
-                            if converted != val {
-                                isProcessingLiveChange = true
-                                testInput = converted
-                                if count > 0 {
-                                    hasTestedSuccessfully = true
-                                    settings.recordBatchConversions(totalAdded: count)
-                                }
-                                DispatchQueue.main.async {
-                                    self.isProcessingLiveChange = false
-                                }
-                            }
                         }
                     }
 
@@ -378,6 +437,10 @@ public struct SetupWizardView: View {
                 }
 
                 Button(action: {
+                    if currentStep >= 2 && !isKeyboardEnabled {
+                        showActivationAlert = true
+                        return
+                    }
                     if currentStep < totalSteps {
                         withAnimation { currentStep += 1 }
                     } else {
@@ -385,13 +448,25 @@ public struct SetupWizardView: View {
                         isPresented = false
                     }
                 }) {
-                    Text(currentStep == totalSteps ? "Tayyor va Boshlash!" : "Davom etish ➔")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(Color(hex: "#2563EB"))
-                        .cornerRadius(12)
+                    HStack(spacing: 8) {
+                        if currentStep >= 2 && !isKeyboardEnabled {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 13))
+                            Text("Avval klaviaturani yoqing")
+                        } else {
+                            Text(currentStep == totalSteps ? "Tayyor va Boshlash!" : "Davom etish ➔")
+                        }
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        (currentStep >= 2 && !isKeyboardEnabled)
+                            ? Color(hex: "#94A3B8")
+                            : Color(hex: "#2563EB")
+                    )
+                    .cornerRadius(12)
                 }
             }
             .padding(16)
@@ -411,9 +486,11 @@ public struct SetupWizardView: View {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(Color(hex: "#0F172A"))
+                    .multilineTextAlignment(.leading)
                 Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "#64748B"))
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -441,9 +518,11 @@ public struct SetupWizardView: View {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Color(hex: "#0F172A"))
+                    .multilineTextAlignment(.leading)
                 Text(desc)
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "#64748B"))
+                    .multilineTextAlignment(.leading)
             }
             Spacer()
         }
@@ -452,6 +531,19 @@ public struct SetupWizardView: View {
     private func openSystemSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
+        }
+    }
+
+    private func refreshKeyboardStatus() {
+        keyboardStatus.refresh()
+        var enabled = keyboardStatus.isKeyboardEnabled || keyboardStatus.isKeyboardActive
+        if !enabled {
+            enabled = HarfiySettings.isKeyboardActiveInSystem()
+        }
+        if self.isKeyboardEnabled != enabled {
+            withAnimation(.spring()) {
+                self.isKeyboardEnabled = enabled
+            }
         }
     }
 }

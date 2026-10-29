@@ -149,8 +149,13 @@ private extension Callouts.InputCallout {
     var positionY: CGFloat {
         let base = buttonFrame.origin.y + buttonSize.height/2 - calloutSize.height/2
         let isEmoji = calloutContext.action?.isEmojiAction == true
-        if isEmoji { return base + 5 }
-        return base
+        let rawY = isEmoji ? base + 5 : base
+        let totalHeight = calloutSize.height + buttonSize.height
+        let rawTop = rawY - totalHeight / 2
+        if rawTop < 4 {
+            return 4 + totalHeight / 2
+        }
+        return rawY
     }
 }
 

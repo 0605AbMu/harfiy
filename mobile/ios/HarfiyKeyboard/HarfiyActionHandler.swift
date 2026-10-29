@@ -49,32 +49,37 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
     }
 
     /// Reset the engine when the user moves the cursor or changes the selection.
-    public func selectionDidChange(contextBeforeInput: String?) {
-        if let last = lastInsertedText, let context = contextBeforeInput, context.hasSuffix(last) { return }
+    ///
+    /// `contextBeforeInput` is an autoclosure because reading the document context is a
+    /// round-trip to the host app; it is only evaluated when the answer can change the outcome.
+    public func selectionDidChange(contextBeforeInput: @autoclosure () -> String?) {
+        guard let last = lastInsertedText else {
+            resetEngine()
+            return
+        }
+        if let context = contextBeforeInput(), context.hasSuffix(last) { return }
         resetEngine()
     }
 
-    /// Trigger Instant Undo for recent automatic conversion (toolbar undo button).
-    public func handleUndo() {
-        deleteBackward(using: keyboardController)
+    open override func handle(_ suggestion: Autocomplete.Suggestion) {
+        resetEngine()
+        super.handle(suggestion)
     }
 
     open override func handle(
         _ gesture: Keyboard.Gesture,
         on action: KeyboardAction
     ) {
-        if action == .custom(named: "emoji") {
-            if gesture == .release || gesture == .press {
-                resetEngine()
-                keyboardContext.keyboardType = .emojis
-                keyboardController?.setKeyboardType(.emojis)
-                return
-            }
+        if action != .none {
+            HarfiySpaceState.shared.hideLocaleImmediately()
         }
         if action == .nextKeyboard && gesture == .release {
             resetEngine()
             (keyboardController as? UIInputViewController)?.advanceToNextInputMode()
             return
+        }
+        if action == .keyboardType(.emojis) {
+            resetEngine()
         }
         if bypassesEngine(gesture, on: action) {
             resetEngine()
@@ -90,12 +95,6 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
         case (.release, .nextKeyboard):
             return { controller in
                 (controller as? UIInputViewController)?.advanceToNextInputMode()
-            }
-
-        case (.release, .custom(named: "emoji")):
-            return { [weak self] controller in
-                self?.keyboardContext.keyboardType = .emojis
-                controller?.setKeyboardType(.emojis)
             }
 
         case (.release, .character(let text)):
@@ -125,6 +124,8 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
 
     private func insertCharacter(_ text: String, using controller: KeyboardController?) {
         guard let controller else { return }
+        let signpost = HarfiyPerf.signposter.beginInterval("insertCharacter")
+        defer { HarfiyPerf.signposter.endInterval("insertCharacter", signpost) }
 
         // Multi-character inputs (e.g. ".com" or emoji sequences) are not engine keystrokes.
         guard text.count == 1, let char = text.first else {
@@ -141,7 +142,9 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
         case .suppress:
             lastInsertedText = nil
         case .transform(let backspacesCount, let replacement):
-            controller.deleteBackward(times: backspacesCount)
+            if backspacesCount > 0 {
+                controller.deleteBackward(times: backspacesCount)
+            }
             controller.insertText(replacement)
             lastInsertedText = replacement
             settings.recordConversion(character: replacement)
@@ -150,6 +153,8 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
 
     private func deleteBackward(using controller: KeyboardController?) {
         guard let controller else { return }
+        let signpost = HarfiyPerf.signposter.beginInterval("deleteBackward")
+        defer { HarfiyPerf.signposter.endInterval("deleteBackward", signpost) }
 
         guard settings.instantUndo else {
             resetEngine()
@@ -162,7 +167,9 @@ open class HarfiyActionHandler: KeyboardAction.StandardHandler {
             controller.deleteBackward()
             lastInsertedText = nil
         case .transform(let backspacesCount, let replacement):
-            controller.deleteBackward(times: backspacesCount)
+            if backspacesCount > 0 {
+                controller.deleteBackward(times: backspacesCount)
+            }
             controller.insertText(replacement)
             lastInsertedText = replacement
         }

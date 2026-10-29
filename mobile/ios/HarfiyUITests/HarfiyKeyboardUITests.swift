@@ -75,7 +75,7 @@ final class HarfiyKeyboardUITests: XCTestCase {
     }
 
     private func selectHarfiyKeyboard() throws {
-        let marker = contacts.staticTexts["Harfiy"]
+        let marker = contacts.buttons["böşliq"]
         // A freshly installed extension can take several seconds to cold-start.
         for attempt in 0..<4 {
             if marker.waitForExistence(timeout: attempt == 0 ? 10 : 6) { return }
@@ -119,6 +119,15 @@ final class HarfiyKeyboardUITests: XCTestCase {
     }
 
     private func tapKey(named name: String) {
+        if name == "space" {
+            for candidate in ["böşliq", "⎵", "space"] {
+                let spaceKey = contacts.buttons[candidate]
+                if spaceKey.waitForExistence(timeout: 1) {
+                    spaceKey.tap()
+                    return
+                }
+            }
+        }
         let key = contacts.buttons[name]
         XCTAssertTrue(key.waitForExistence(timeout: 2), "Key '\(name)' not found.\n\(contacts.debugDescription)")
         key.tap()

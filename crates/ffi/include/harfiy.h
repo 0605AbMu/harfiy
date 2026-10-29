@@ -1,6 +1,7 @@
 #ifndef HARFIY_H
 #define HARFIY_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -19,10 +20,14 @@ typedef enum {
 } HarfiyActionType;
 
 /// Detailed transformation result.
+/// For HARFIY_ACTION_TRANSFORM, `replacement_utf8` points to `replacement_len` bytes of UTF-8
+/// (e.g. "ş", "ç", "ö", "ğ"). The bytes are NOT NUL-terminated and live for the whole process:
+/// do not free them. For any other action the pointer is NULL and the length is 0.
 typedef struct {
     HarfiyActionType action_type;
     uint32_t backspaces_count;
-    const char* replacement_utf8; // Null-terminated static string (e.g. "ş", "ç", "ö", "ğ")
+    const uint8_t* replacement_utf8;
+    size_t replacement_len;
 } HarfiyActionResult;
 
 /// Create a new Harfiy engine instance.

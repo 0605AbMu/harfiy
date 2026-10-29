@@ -26,9 +26,9 @@
 		A20000062C00000100000001 /* HarfiyActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000042C00000100000001 /* HarfiyActionHandler.swift */; };
 		A20000072C00000100000001 /* HarfiyKeyboardLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */; };
 		A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */; };
-		A20000092C00000100000001 /* HarfiyNextKeyboardButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */; };
-		A200000A2C00000100000001 /* HarfiyToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000082C00000100000001 /* HarfiyToolbarView.swift */; };
 		A200000B2C00000100000001 /* HarfiyKeyboardStyleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */; };
+		A200000D2C00000100000001 /* HarfiySpaceButtonContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */; };
+		A200000E2C00000100000001 /* HarfiyPerf.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000C2C00000100000001 /* HarfiyPerf.swift */; };
 		DCF71A17FB52CB5080B06DD5 /* HarfiyKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBF1DBBFCB17E83BABC1E49F /* HarfiyKeyboardUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -79,9 +79,9 @@
 		B20000042C00000100000001 /* HarfiyActionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyActionHandler.swift; sourceTree = "<group>"; };
 		B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyKeyboardLayoutService.swift; sourceTree = "<group>"; };
 		B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyEmojiKeyboard.swift; sourceTree = "<group>"; };
-		B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyNextKeyboardButton.swift; sourceTree = "<group>"; };
-		B20000082C00000100000001 /* HarfiyToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyToolbarView.swift; sourceTree = "<group>"; };
 		B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyKeyboardStyleService.swift; sourceTree = "<group>"; };
+		B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiySpaceButtonContent.swift; sourceTree = "<group>"; };
+		B200000C2C00000100000001 /* HarfiyPerf.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarfiyPerf.swift; sourceTree = "<group>"; };
 		B30000012C00000100000001 /* HarfiyCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = HarfiyCore.xcframework; sourceTree = "<group>"; };
 		C10000012C00000100000001 /* HarfiyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HarfiyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000022C00000100000001 /* HarfiyKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HarfiyKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -151,9 +151,9 @@
 				B20000042C00000100000001 /* HarfiyActionHandler.swift */,
 				B20000052C00000100000001 /* HarfiyKeyboardLayoutService.swift */,
 				B20000062C00000100000001 /* HarfiyEmojiKeyboard.swift */,
-				B20000072C00000100000001 /* HarfiyNextKeyboardButton.swift */,
-				B20000082C00000100000001 /* HarfiyToolbarView.swift */,
 				B20000092C00000100000001 /* HarfiyKeyboardStyleService.swift */,
+				B200000B2C00000100000001 /* HarfiySpaceButtonContent.swift */,
+				B200000C2C00000100000001 /* HarfiyPerf.swift */,
 				B20000032C00000100000001 /* Info.plist */,
 			);
 			path = HarfiyKeyboard;
@@ -191,7 +191,6 @@
 			children = (
 				FBF1DBBFCB17E83BABC1E49F /* HarfiyKeyboardUITests.swift */,
 			);
-			name = HarfiyUITests;
 			path = HarfiyUITests;
 			sourceTree = "<group>";
 		};
@@ -286,7 +285,7 @@
 			);
 			mainGroup = 010000022C00000100000001;
 			packageReferences = (
-				E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */,
+				E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */,
 			);
 			productRefGroup = 010000062C00000100000001 /* Products */;
 			projectDirPath = "";
@@ -356,9 +355,9 @@
 				A20000062C00000100000001 /* HarfiyActionHandler.swift in Sources */,
 				A20000072C00000100000001 /* HarfiyKeyboardLayoutService.swift in Sources */,
 				A20000082C00000100000001 /* HarfiyEmojiKeyboard.swift in Sources */,
-				A20000092C00000100000001 /* HarfiyNextKeyboardButton.swift in Sources */,
-				A200000A2C00000100000001 /* HarfiyToolbarView.swift in Sources */,
 				A200000B2C00000100000001 /* HarfiyKeyboardStyleService.swift in Sources */,
+				A200000D2C00000100000001 /* HarfiySpaceButtonContent.swift in Sources */,
+				A200000E2C00000100000001 /* HarfiyPerf.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -508,6 +507,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -523,8 +523,9 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRIP_INSTALLED_PRODUCT = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
 				SWIFT_VERSION = 5.0;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -534,8 +535,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HarfiyApp/HarfiyApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -547,8 +549,12 @@
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uz.harfiy.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -556,8 +562,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HarfiyApp/HarfiyApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -569,16 +576,21 @@
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = uz.harfiy.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
 		H20000032C00000100000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HarfiyKeyboard/HarfiyKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
@@ -598,8 +610,9 @@
 		H20000042C00000100000001 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HarfiyKeyboard/HarfiyKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 6P4DX6PR75;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HarfiyKeyboard/Info.plist;
@@ -658,7 +671,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */ = {
+		E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/KeyboardKit;
 		};
@@ -667,7 +680,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		E30000022C00000100000001 /* KeyboardKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E30000012C00000100000001 /* XCLocalSwiftPackageReference "KeyboardKit" */;
+			package = E30000012C00000100000001 /* XCLocalSwiftPackageReference "Packages/KeyboardKit" */;
 			productName = KeyboardKit;
 		};
 /* End XCSwiftPackageProductDependency section */

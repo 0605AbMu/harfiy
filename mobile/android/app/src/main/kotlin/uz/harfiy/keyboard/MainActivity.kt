@@ -1694,6 +1694,7 @@ class MainActivity : Activity() {
             res = res.replace("o$a", "ö").replace("O$a", "Ö")
             res = res.replace("g$a", "ğ").replace("G$a", "Ğ")
         }
+        res = res.replace("õ", "ö").replace("Õ", "Ö")
         if (enableNg) {
             res = res.replace("ng", "ñ").replace("Ng", "Ñ").replace("NG", "Ñ")
         }
