@@ -46,34 +46,52 @@ pub fn is_first_trigger(c: char, enable_ng: bool) -> bool {
     }
 }
 
+/// Which letter a conversion produces, so callers can attribute conversions
+/// (e.g. usage statistics) without re-deriving the rules themselves.
+/// The discriminants are part of the FFI contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RuleKind {
+    Sh = 0,
+    Ch = 1,
+    O = 2,
+    G = 3,
+    Ng = 4,
+}
+
 /// Result of a successful rule match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionMatch {
     pub replacement: &'static str,
+    pub kind: RuleKind,
+}
+
+const fn conv(replacement: &'static str, kind: RuleKind) -> Option<ConversionMatch> {
+    Some(ConversionMatch { replacement, kind })
 }
 
 /// Check if `(prev, curr)` matches an auto-conversion rule.
 pub fn match_rule(prev: char, curr: char, enable_ng: bool) -> Option<ConversionMatch> {
     match (prev, curr) {
         // sh -> ş
-        ('s', 'h') | ('s', 'H') => Some(ConversionMatch { replacement: "ş" }),
-        ('S', 'h') | ('S', 'H') => Some(ConversionMatch { replacement: "Ş" }),
+        ('s', 'h') | ('s', 'H') => conv("ş", RuleKind::Sh),
+        ('S', 'h') | ('S', 'H') => conv("Ş", RuleKind::Sh),
 
         // ch -> ç
-        ('c', 'h') | ('c', 'H') => Some(ConversionMatch { replacement: "ç" }),
-        ('C', 'h') | ('C', 'H') => Some(ConversionMatch { replacement: "Ç" }),
+        ('c', 'h') | ('c', 'H') => conv("ç", RuleKind::Ch),
+        ('C', 'h') | ('C', 'H') => conv("Ç", RuleKind::Ch),
 
         // o' -> ö
-        ('o', c) if is_apostrophe(c) => Some(ConversionMatch { replacement: "ö" }),
-        ('O', c) if is_apostrophe(c) => Some(ConversionMatch { replacement: "Ö" }),
+        ('o', c) if is_apostrophe(c) => conv("ö", RuleKind::O),
+        ('O', c) if is_apostrophe(c) => conv("Ö", RuleKind::O),
 
         // g' -> ğ
-        ('g', c) if is_apostrophe(c) => Some(ConversionMatch { replacement: "ğ" }),
-        ('G', c) if is_apostrophe(c) => Some(ConversionMatch { replacement: "Ğ" }),
+        ('g', c) if is_apostrophe(c) => conv("ğ", RuleKind::G),
+        ('G', c) if is_apostrophe(c) => conv("Ğ", RuleKind::G),
 
         // Optional: ng -> ñ
-        ('n', 'g') | ('n', 'G') if enable_ng => Some(ConversionMatch { replacement: "ñ" }),
-        ('N', 'g') | ('N', 'G') if enable_ng => Some(ConversionMatch { replacement: "Ñ" }),
+        ('n', 'g') | ('n', 'G') if enable_ng => conv("ñ", RuleKind::Ng),
+        ('N', 'g') | ('N', 'G') if enable_ng => conv("Ñ", RuleKind::Ng),
 
         _ => None,
     }
@@ -83,10 +101,41 @@ pub fn match_rule(prev: char, curr: char, enable_ng: bool) -> Option<ConversionM
 #[inline]
 pub fn match_single(c: char) -> Option<ConversionMatch> {
     match c {
-        'õ' => Some(ConversionMatch { replacement: "ö" }),
-        'Õ' => Some(ConversionMatch { replacement: "Ö" }),
+        'õ' => conv("ö", RuleKind::O),
+        'Õ' => conv("Ö", RuleKind::O),
         _ => None,
     }
+}
+
+/// A replacement ending at the cursor: the `delete_count` characters right before
+/// it become `replacement`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TailEdit {
+    pub delete_count: usize,
+    pub replacement: &'static str,
+    pub kind: RuleKind,
+}
+
+/// Plan the conversion triggered by `curr` having just been typed after `prev`
+/// (`None` when `curr` starts the field).
+///
+/// Stateless counterpart of [`HarfiyEngine`](crate::HarfiyEngine) for integrations that
+/// observe text changes rather than key events (e.g. the Android accessibility service),
+/// where paste, autocorrect or cursor moves would desynchronise a keystroke FSM.
+/// Rule precedence matches [`plan_edits`]: a pair beats a single character.
+pub fn plan_tail(prev: Option<char>, curr: char, enable_ng: bool) -> Option<TailEdit> {
+    if let Some(m) = prev.and_then(|p| match_rule(p, curr, enable_ng)) {
+        return Some(TailEdit {
+            delete_count: 2,
+            replacement: m.replacement,
+            kind: m.kind,
+        });
+    }
+    match_single(curr).map(|m| TailEdit {
+        delete_count: 1,
+        replacement: m.replacement,
+        kind: m.kind,
+    })
 }
 
 /// A single replacement planned by the batch converter: the characters `start..end`
@@ -96,6 +145,8 @@ pub struct Edit {
     pub start: usize,
     pub end: usize,
     pub replacement: &'static str,
+    /// `None` for smart-apostrophe edits, which aren't letter conversions.
+    pub kind: Option<RuleKind>,
 }
 
 /// Plan every replacement needed to convert `chars` to the new Uzbek Latin orthography.
@@ -117,6 +168,7 @@ pub fn plan_edits(chars: &[char], enable_ng: bool, smart_apostrophe: bool) -> Ve
                 start: i,
                 end: i + 2,
                 replacement: m.replacement,
+                kind: Some(m.kind),
             });
             i += 2;
             continue;
@@ -127,6 +179,7 @@ pub fn plan_edits(chars: &[char], enable_ng: bool, smart_apostrophe: bool) -> Ve
                 start: i,
                 end: i + 1,
                 replacement: m.replacement,
+                kind: Some(m.kind),
             });
             i += 1;
             continue;
@@ -141,6 +194,7 @@ pub fn plan_edits(chars: &[char], enable_ng: bool, smart_apostrophe: bool) -> Ve
                     start: i,
                     end: i + 1,
                     replacement: "ʻ", // U+02BB modifier letter turned comma (official tutuq belgisi)
+                    kind: None,
                 });
             }
         }
@@ -241,11 +295,38 @@ mod tests {
         assert_eq!(
             edits,
             vec![
-                Edit { start: 2, end: 4, replacement: "ş" },
-                Edit { start: 5, end: 7, replacement: "ö" },
-                Edit { start: 12, end: 13, replacement: "ʻ" },
+                Edit { start: 2, end: 4, replacement: "ş", kind: Some(RuleKind::Sh) },
+                Edit { start: 5, end: 7, replacement: "ö", kind: Some(RuleKind::O) },
+                Edit { start: 12, end: 13, replacement: "ʻ", kind: None },
             ]
         );
+    }
+
+    #[test]
+    fn test_plan_tail() {
+        let edit = plan_tail(Some('o'), '′', false).unwrap();
+        assert_eq!(
+            edit,
+            TailEdit {
+                delete_count: 2,
+                replacement: "ö",
+                kind: RuleKind::O
+            }
+        );
+        assert_eq!(plan_tail(Some('S'), 'h', false).unwrap().kind, RuleKind::Sh);
+        assert_eq!(
+            plan_tail(None, 'Õ', false).unwrap(),
+            TailEdit {
+                delete_count: 1,
+                replacement: "Ö",
+                kind: RuleKind::O
+            }
+        );
+        assert_eq!(plan_tail(Some('a'), 'õ', false).unwrap().delete_count, 1);
+        assert!(plan_tail(Some('n'), 'g', false).is_none());
+        assert_eq!(plan_tail(Some('n'), 'g', true).unwrap().kind, RuleKind::Ng);
+        assert!(plan_tail(None, 'h', false).is_none());
+        assert!(plan_tail(Some('a'), 'b', false).is_none());
     }
 
     #[test]
