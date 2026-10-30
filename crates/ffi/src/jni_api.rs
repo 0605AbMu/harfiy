@@ -1,195 +1,80 @@
-//! JNI bindings for Harfiy Engine for Android (InputMethodService).
+//! JNI bindings for Harfiy Engine on Android (`uz.harfiy.keyboard.HarfiyEngine`).
+//!
+//! The Android accessibility service observes text changes rather than key events, so it
+//! uses the stateless rule API; the keystroke FSM is not exposed here.
 
 use std::ptr;
 
-use harfiy_engine::{EngineConfig, HarfiyEngine, InputEvent, KeyAction, SpecialKey};
-use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
+use harfiy_engine::plan_tail;
+use jni::objects::{JClass, JIntArray, JString};
+use jni::sys::{jboolean, jint, jintArray, jsize, jstring, JNI_TRUE};
 use jni::JNIEnv;
 
-/// Helper to cast jlong handle to &mut HarfiyEngine.
-unsafe fn to_engine<'a>(handle: jlong) -> Option<&'a mut HarfiyEngine> {
-    if handle == 0 {
-        None
-    } else {
-        (handle as *mut HarfiyEngine).as_mut()
-    }
-}
+use crate::edits::plan_edits_utf16;
 
-/// Create a new HarfiyEngine instance and return its raw pointer as jlong.
+/// Plan the conversion triggered by typing `curr` right after `prev` (`prev < 0` when
+/// `curr` starts the field).
+///
+/// Returns the replacement string, or null when nothing converts. On a match `out_meta`
+/// (length 2) receives `[delete_count, rule_kind]`.
 #[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_createEngine(
-    _env: JNIEnv,
-    _class: JClass,
-    enable_ng: jboolean,
-) -> jlong {
-    let engine = HarfiyEngine::new(EngineConfig {
-        enable_ng: enable_ng == JNI_TRUE,
-        enabled: true,
-    });
-    Box::into_raw(Box::new(engine)) as jlong
-}
-
-/// Destroy the HarfiyEngine instance.
-#[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_destroyEngine(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) {
-    if handle != 0 {
-        drop(Box::from_raw(handle as *mut HarfiyEngine));
-    }
-}
-
-/// Reset the engine state back to Idle.
-#[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_resetEngine(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) {
-    if let Some(engine) = to_engine(handle) {
-        engine.reset();
-    }
-}
-
-/// Dynamically update 'ng' rule configuration.
-#[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_setEnableNg(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-    enable_ng: jboolean,
-) {
-    if let Some(engine) = to_engine(handle) {
-        engine.set_enable_ng(enable_ng == JNI_TRUE);
-    }
-}
-
-/// Query if 'ng' rule is enabled.
-#[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_isEnableNg(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) -> jboolean {
-    if let Some(engine) = to_engine(handle) {
-        if engine.is_enable_ng() {
-            JNI_TRUE
-        } else {
-            JNI_FALSE
-        }
-    } else {
-        JNI_FALSE
-    }
-}
-
-/// Encode Harfiy action into a single 64-bit integer for zero-allocation JNI interop:
-/// - Bits 0..7: ActionType (0: PassThrough, 1: Suppress, 2: Transform)
-/// - Bits 8..15: Backspaces count (0..255)
-/// - Bits 16..63: Reserved
-fn encode_action(action: KeyAction) -> (jlong, Option<&'static str>) {
-    match action {
-        KeyAction::PassThrough => (0, None),
-        KeyAction::Suppress => (1, None),
-        KeyAction::Transform {
-            backspaces_count,
-            replacement,
-        } => {
-            let encoded = 2 | ((backspaces_count as jlong & 0xFF) << 8);
-            (encoded, Some(replacement))
-        }
-    }
-}
-
-/// Process a single character and return:
-/// - If Transform: replacement String.
-/// - If PassThrough or Suppress: null.
-/// The `out_meta` array of length 2 receives:
-/// - out_meta[0]: action_type (0: PassThrough, 1: Suppress, 2: Transform)
-/// - out_meta[1]: backspaces_count
-#[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_processChar(
+pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngine_planTail(
     env: JNIEnv,
     _class: JClass,
-    handle: jlong,
-    unicode_char: jint,
-    out_meta: jni::sys::jintArray,
+    prev: jint,
+    curr: jint,
+    enable_ng: jboolean,
+    out_meta: jintArray,
 ) -> jstring {
-    let Some(engine) = to_engine(handle) else {
+    let prev = u32::try_from(prev).ok().and_then(char::from_u32);
+    let Some(curr) = u32::try_from(curr).ok().and_then(char::from_u32) else {
+        return ptr::null_mut();
+    };
+    let Some(edit) = plan_tail(prev, curr, enable_ng == JNI_TRUE) else {
         return ptr::null_mut();
     };
 
-    let Some(ch) = char::from_u32(unicode_char as u32) else {
+    let meta = [edit.delete_count as jint, edit.kind as jint];
+    if env
+        .set_int_array_region(JIntArray::from_raw(out_meta), 0, &meta)
+        .is_err()
+    {
         return ptr::null_mut();
-    };
-
-    let action = engine.process(InputEvent::Char(ch));
-    let (encoded, replacement_opt) = encode_action(action);
-
-    let action_type = (encoded & 0xFF) as i32;
-    let backspaces = ((encoded >> 8) & 0xFF) as i32;
-
-    if !out_meta.is_null() {
-        let meta_buf = [action_type, backspaces];
-        let _ = env.set_int_array_region(
-            unsafe { jni::objects::JIntArray::from_raw(out_meta) },
-            0,
-            &meta_buf,
-        );
     }
 
-    if let Some(repl) = replacement_opt {
-        match env.new_string(repl) {
-            Ok(js) => js.into_raw(),
-            Err(_) => ptr::null_mut(),
-        }
-    } else {
-        ptr::null_mut()
+    match env.new_string(edit.replacement) {
+        Ok(js) => js.into_raw(),
+        Err(_) => ptr::null_mut(),
     }
 }
 
-/// Process Backspace event (supporting Instant Undo).
+/// Plan every live-typing edit in `text`, for inserts of several characters at once
+/// (glide typing, autocorrect). Returns the flat `[start, end, kind, replacement]`
+/// groups described by [`plan_edits_utf16`], empty when nothing converts.
 #[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_processBackspace(
-    env: JNIEnv,
+pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngine_planEditsNative(
+    mut env: JNIEnv,
     _class: JClass,
-    handle: jlong,
-    out_meta: jni::sys::jintArray,
-) -> jstring {
-    let Some(engine) = to_engine(handle) else {
+    text: JString,
+    enable_ng: jboolean,
+) -> jintArray {
+    let Ok(text) = env.get_string(&text) else {
         return ptr::null_mut();
     };
+    let flat = plan_edits_utf16(&text.to_string_lossy(), enable_ng == JNI_TRUE);
 
-    let action = engine.process(InputEvent::Special(SpecialKey::Backspace));
-    let (encoded, replacement_opt) = encode_action(action);
-
-    let action_type = (encoded & 0xFF) as i32;
-    let backspaces = ((encoded >> 8) & 0xFF) as i32;
-
-    if !out_meta.is_null() {
-        let meta_buf = [action_type, backspaces];
-        let _ = env.set_int_array_region(
-            unsafe { jni::objects::JIntArray::from_raw(out_meta) },
-            0,
-            &meta_buf,
-        );
+    let Ok(array) = env.new_int_array(flat.len() as jsize) else {
+        return ptr::null_mut();
+    };
+    if env.set_int_array_region(&array, 0, &flat).is_err() {
+        return ptr::null_mut();
     }
-
-    if let Some(repl) = replacement_opt {
-        match env.new_string(repl) {
-            Ok(js) => js.into_raw(),
-            Err(_) => ptr::null_mut(),
-        }
-    } else {
-        ptr::null_mut()
-    }
+    array.into_raw()
 }
 
 /// Convert an entire text in batch mode.
 #[no_mangle]
-pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngineBridge_convertText(
+pub unsafe extern "system" fn Java_uz_harfiy_keyboard_HarfiyEngine_convertText(
     mut env: JNIEnv,
     _class: JClass,
     input_text: JString,

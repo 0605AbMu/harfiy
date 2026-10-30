@@ -55,7 +55,6 @@ import java.util.Locale
 class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
-    private var engineBridge: HarfiyEngineBridge? = null
 
     // Dynamic UI elements
     private lateinit var heroCard: LinearLayout
@@ -79,12 +78,6 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(HarfiyAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
-
-        engineBridge = try {
-            HarfiyEngineBridge(prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false))
-        } catch (_: Exception) {
-            null
-        }
 
         val dp = resources.displayMetrics.density
         fun dp(v: Int): Int = (v * dp).toInt()
@@ -391,7 +384,6 @@ class MainActivity : Activity() {
                 prefs.getBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, true)
             ) { isChecked ->
                 prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, isChecked) }
-                notifyPrefsChanged()
             }
         )
         settingsCard.addView(createDivider())
@@ -406,8 +398,6 @@ class MainActivity : Activity() {
                 prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
             ) { isChecked ->
                 prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, isChecked) }
-                engineBridge?.isEnableNg = isChecked
-                notifyPrefsChanged()
             }
         )
         settingsCard.addView(createDivider())
@@ -422,7 +412,6 @@ class MainActivity : Activity() {
                 prefs.getBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, true)
             ) { isChecked ->
                 prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_GAME_PAUSE, isChecked) }
-                notifyPrefsChanged()
             }
         )
         settingsCard.addView(createDivider())
@@ -765,11 +754,7 @@ class MainActivity : Activity() {
                 val input = convertInput.text.toString()
                 if (input.isNotEmpty()) {
                     val enableNg = prefs.getBoolean(HarfiyAccessibilityService.KEY_ENABLE_NG, false)
-                    val converted = if (engineBridge != null) {
-                        engineBridge!!.convertText(input, smartApostrophe = true)
-                    } else {
-                        fallbackConvertText(input, enableNg)
-                    }
+                    val converted = HarfiyEngine.convert(input, enableNg)
                     convertInput.setText(converted)
                     convertInput.setSelection(converted.length)
                     Toast.makeText(this@MainActivity, "Matn to‘liq o‘girildi!", Toast.LENGTH_SHORT).show()
@@ -941,14 +926,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(4), 0, dp(2))
             isClickable = true
             setOnClickListener {
-                prefs.edit {
-                    remove(HarfiyAccessibilityService.KEY_STATS_TOTAL)
-                    remove(HarfiyAccessibilityService.KEY_STATS_SH)
-                    remove(HarfiyAccessibilityService.KEY_STATS_CH)
-                    remove(HarfiyAccessibilityService.KEY_STATS_O)
-                    remove(HarfiyAccessibilityService.KEY_STATS_G)
-                    remove(HarfiyAccessibilityService.KEY_STATS_NG)
-                }
+                HarfiyStats.reset(this@MainActivity)
                 updateStats()
                 Toast.makeText(this@MainActivity, "Natijalar tozalandi", Toast.LENGTH_SHORT).show()
             }
@@ -1143,8 +1121,6 @@ class MainActivity : Activity() {
         super.onDestroy()
         activeWizardDialog?.dismiss()
         activeWizardDialog = null
-        engineBridge?.close()
-        engineBridge = null
     }
 
     private fun promptAddQuickSettingsTile() {
@@ -1339,12 +1315,13 @@ class MainActivity : Activity() {
     }
 
     private fun updateStats() {
-        val total = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_TOTAL, 0L)
-        val sh = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_SH, 0L)
-        val ch = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_CH, 0L)
-        val o = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_O, 0L)
-        val g = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_G, 0L)
-        val ng = prefs.getLong(HarfiyAccessibilityService.KEY_STATS_NG, 0L)
+        val counts = HarfiyStats.snapshot(this)
+        val sh = counts[HarfiyEngine.RuleKind.SH.ordinal]
+        val ch = counts[HarfiyEngine.RuleKind.CH.ordinal]
+        val o = counts[HarfiyEngine.RuleKind.O.ordinal]
+        val g = counts[HarfiyEngine.RuleKind.G.ordinal]
+        val ng = counts[HarfiyEngine.RuleKind.NG.ordinal]
+        val total = counts.sum()
 
         val minutesSaved = String.format(Locale.US, "%.1f", (total * 0.8) / 60.0)
 
@@ -1646,7 +1623,6 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f)
             setOnClickListener {
                 prefs.edit(commit = true) { putStringSet(HarfiyAccessibilityService.KEY_EXCLUDED_APPS, currentExcluded) }
-                notifyPrefsChanged()
                 updateExcludedAppsSummary()
                 Toast.makeText(this@MainActivity, "Saqlandi", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
@@ -1683,26 +1659,6 @@ class MainActivity : Activity() {
             it.resolveInfo.serviceInfo.packageName == packageName &&
             it.resolveInfo.serviceInfo.name.contains("HarfiyAccessibilityService")
         }
-    }
-
-    private fun fallbackConvertText(input: String, enableNg: Boolean): String {
-        var res = input
-        res = res.replace("sh", "ş").replace("Sh", "Ş").replace("SH", "Ş")
-        res = res.replace("ch", "ç").replace("Ch", "Ç").replace("CH", "Ç")
-        val apos = charArrayOf('\'', '`', '‘', '’', 'ʻ', 'ʼ', '´')
-        for (a in apos) {
-            res = res.replace("o$a", "ö").replace("O$a", "Ö")
-            res = res.replace("g$a", "ğ").replace("G$a", "Ğ")
-        }
-        res = res.replace("õ", "ö").replace("Õ", "Ö")
-        if (enableNg) {
-            res = res.replace("ng", "ñ").replace("Ng", "Ñ").replace("NG", "Ñ")
-        }
-        return res
-    }
-
-    private fun notifyPrefsChanged() {
-        sendBroadcast(Intent(HarfiyAccessibilityService.ACTION_PREFS_CHANGED).setPackage(packageName))
     }
 
     private fun isXiaomiOrMiui(): Boolean {

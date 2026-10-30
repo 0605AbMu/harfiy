@@ -19,7 +19,7 @@ mobile/
     ├── app/
     │   ├── src/main/jniLibs/  # .so kutubxonalari (avtomatik yaratiladi)
     │   └── src/main/kotlin/uz/harfiy/keyboard/
-    │       ├── HarfiyEngineBridge.kt          # JNI Bridge
+    │       ├── HarfiyEngine.kt                # JNI Bridge
     │       ├── HarfiyAccessibilityService.kt  # Tizim klaviaturasi (Gboard, Samsung) ustida ishlovchi xizmat
     │       └── MainActivity.kt                # Boshqaruv paneli va sinov maydoni
 ```
@@ -71,6 +71,8 @@ Android'da Harfiy hech qanday qo'shimcha yoki noqulay klaviatura talab qilmaydi.
 ### 1-qadam: Android JNI kutubxonalarini yig'ish
 ```bash
 ./mobile/scripts/build_android.sh
+# yoki Windows (PowerShell) da:
+# powershell -ExecutionPolicy Bypass -File ./mobile/scripts/build_android.ps1
 ```
 Ushbu skript `cargo-ndk` orqali `arm64-v8a`, `armeabi-v7a` va `x86_64` uchun `libharfiy_ffi.so` fayllarini `mobile/android/app/src/main/jniLibs` ga joylaydi.
 
@@ -79,6 +81,7 @@ Ushbu skript `cargo-ndk` orqali `arm64-v8a`, `armeabi-v7a` va `x86_64` uchun `li
 2. Telefoningizni USB orqali ulab, **Run (Shift + F10)** tugmasini bosing yoki terminalda:
    ```bash
    cd mobile/android && ./gradlew installDebug
+   # Windows da: cd mobile\android && .\gradlew.bat installDebug
    ```
 3. Ilova ochilgach, **«Sozlamalardan Harfiy'ni yoqish»** tugmasini bosing va Maxsus imkoniyatlar (Accessibility) bo'limidan Harfiy'ni yoqing.
 4. Endi Telegram, WhatsApp, Notes yoki istalgan ilovada sevimli klaviaturangizda bemalol yozavering!

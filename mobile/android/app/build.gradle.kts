@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "uz.harfiy.keyboard"
-        minSdk = 21
+        minSdk = 33
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.1"
