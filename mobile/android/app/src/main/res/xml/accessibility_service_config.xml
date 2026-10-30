@@ -5,4 +5,4 @@
     android:accessibilityFlags="flagDefault|flagInputMethodEditor"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_service_description"
-    android:notificationTimeout="20" />
+    android:notificationTimeout="0" />
