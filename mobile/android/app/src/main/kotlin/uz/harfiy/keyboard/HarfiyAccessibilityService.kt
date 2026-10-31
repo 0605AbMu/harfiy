@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.text.TextUtils
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.EditorInfo
 import androidx.core.content.edit
@@ -43,6 +44,7 @@ import androidx.core.content.edit
 class HarfiyAccessibilityService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "Harfiy"
         const val PREFS_NAME = "harfiy_prefs"
         const val KEY_ENABLE_NG = "harfiy_enable_ng"
         const val KEY_INSTANT_UNDO = "harfiy_instant_undo"
@@ -115,11 +117,13 @@ class HarfiyAccessibilityService : AccessibilityService() {
             selEnd = attribute.initialSelEnd
             composingStart = -1
             composingEnd = -1
+            Log.d(TAG, "onStartInput: pkg=${attribute.packageName}, selStart=$selStart, selEnd=$selEnd")
             resetFieldState()
         }
 
         override fun onFinishInput() {
             super.onFinishInput()
+            Log.d(TAG, "onFinishInput")
             selStart = -1
             selEnd = -1
             composingStart = -1
@@ -187,11 +191,15 @@ class HarfiyAccessibilityService : AccessibilityService() {
         excludedApps = prefs.getStringSet(KEY_EXCLUDED_APPS, emptySet())?.toSet() ?: emptySet()
     }
 
-    override fun onCreateInputMethod(): InputMethod = TrackingInputMethod()
+    override fun onCreateInputMethod(): InputMethod {
+        Log.d(TAG, "onCreateInputMethod called")
+        return TrackingInputMethod()
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        Log.d(TAG, "onServiceConnected: inputMethod=$inputMethod")
     }
 
     /**
@@ -208,7 +216,7 @@ class HarfiyAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {}
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
-                // Focus shifted to another input field
+                Log.d(TAG, "TYPE_VIEW_FOCUSED: pkg=${event.packageName}")
                 resetFieldState()
                 return
             }
@@ -269,8 +277,11 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
         // Every edit goes through the connected editor, so events from anything else
         // can't be acted on.
-        val editor = (inputMethod as? TrackingInputMethod)?.currentInputEditorInfo ?: return
-        if (editor.packageName != pkgName || !isConvertibleField(editor.inputType)) return
+        val im = inputMethod as? TrackingInputMethod
+        val editor = im?.currentInputEditorInfo
+        if (editor == null || editor.packageName != pkgName || !isConvertibleField(editor.inputType)) {
+            return
+        }
 
         val fromIndex = event.fromIndex
         val addedCount = event.addedCount
@@ -310,14 +321,28 @@ class HarfiyAccessibilityService : AccessibilityService() {
             val currChar = tail[tail.length - 1]
             val prevChar = if (tail.length >= 2) tail[tail.length - 2] else null
 
-            val edit = HarfiyEngine.planTail(prevChar, currChar, enableNg) ?: return
-
-            val original = tail.subSequence(tail.length - edit.deleteCount, tail.length).toString()
-            convert(pkgName, original, edit.replacement, listOf(edit.kind), insertEnd, undoable = true)
+            val edit = HarfiyEngine.planTail(prevChar, currChar, enableNg)
+            if (edit != null) {
+                val original = tail.subSequence(tail.length - edit.deleteCount, tail.length).toString()
+                convert(pkgName, original, edit.replacement, listOf(edit.kind), insertEnd, undoable = true)
+            } else if (isDelimiter(currChar)) {
+                // If the user typed space or punctuation, flush any pending conversions immediately
+                if (deferredFrom >= 0) {
+                    mainHandler.removeCallbacks(flushRunnable)
+                    flushDeferred()
+                }
+            }
         } else if (addedCount <= MAX_BULK_INSERT) {
             convertInsert(event, pkgName, addedCount, insertEnd)
         }
         // Larger inserts are pastes: rewriting them could drop the pasted formatting.
+    }
+
+    private fun isDelimiter(c: Char): Boolean {
+        if (c == '\'' || c == '`' || c == '‘' || c == '’' || c == 'ʻ' || c == 'ʼ' || c == '´') {
+            return false
+        }
+        return c.isWhitespace() || c in ".,!?:;()[]{}\"«»—–…•№"
     }
 
     /**
@@ -328,7 +353,9 @@ class HarfiyAccessibilityService : AccessibilityService() {
     private fun convertInsert(event: AccessibilityEvent, pkgName: String, addedCount: Int, insertEnd: Int) {
         val text = textBefore(event, pkgName, insertEnd, addedCount + 1)?.toString() ?: return
         val plan = planBeforeCursor(text, insertEnd) ?: return
-        convert(pkgName, plan.original, plan.replacement, plan.kinds, insertEnd, undoable = false)
+        val singleKey = event.removedCount + 1 == addedCount
+        val undoable = singleKey && plan.original.length in 2..3 && plan.replacement.length == 1
+        convert(pkgName, plan.original, plan.replacement, plan.kinds, insertEnd, undoable = undoable)
     }
 
     /**
@@ -454,7 +481,9 @@ class HarfiyAccessibilityService : AccessibilityService() {
         undoable: Boolean,
         retryIfStale: Boolean = true
     ) {
-        when (replaceBeforeCursor(pkgName, original, replacement, cursor)) {
+        val result = replaceBeforeCursor(pkgName, original, replacement, cursor)
+        Log.d(TAG, "convert: original='$original' -> '$replacement' at cursor=$cursor, result=$result")
+        when (result) {
             EditResult.DONE -> {
                 if (undoable) {
                     lastUndo = UndoState(
@@ -491,26 +520,49 @@ class HarfiyAccessibilityService : AccessibilityService() {
      * field no longer looks like we expect; none of them touches the text.
      */
     private fun replaceBeforeCursor(pkgName: String, expected: String, replacement: String, cursor: Int): EditResult {
-        val im = inputMethod as? TrackingInputMethod ?: return EditResult.MISMATCH
-        // The event must come from the app whose editor we're connected to.
-        if (im.currentInputEditorInfo?.packageName != pkgName) return EditResult.MISMATCH
-        val ic = im.currentInputConnection ?: return EditResult.MISMATCH
-
-        // The composing region is only trustworthy if the snapshot it came with matches
-        // the cursor; checked first so a word being composed costs no IPC.
-        if (im.selStart != cursor || im.selEnd != cursor) return EditResult.STALE
-        if (im.isComposing) return EditResult.COMPOSING
-
-        val surrounding = ic.getSurroundingText(expected.length, 0, 0) ?: return EditResult.MISMATCH
-        val sel = surrounding.selectionStart
-        if (sel != surrounding.selectionEnd || sel < expected.length) return EditResult.MISMATCH
-        if (surrounding.offset >= 0 && surrounding.offset + sel != cursor) return EditResult.MISMATCH
-        if (!TextUtils.equals(surrounding.text.subSequence(sel - expected.length, sel), expected)) {
+        val im = inputMethod as? TrackingInputMethod
+        if (im == null) {
+            Log.d(TAG, "replaceBeforeCursor: im is null")
+            return EditResult.MISMATCH
+        }
+        if (im.currentInputEditorInfo?.packageName != pkgName) {
+            Log.d(TAG, "replaceBeforeCursor: pkg mismatch ${im.currentInputEditorInfo?.packageName} != $pkgName")
+            return EditResult.MISMATCH
+        }
+        val ic = im.currentInputConnection
+        if (ic == null) {
+            Log.d(TAG, "replaceBeforeCursor: ic is null")
             return EditResult.MISMATCH
         }
 
-        if (expected.isNotEmpty()) ic.deleteSurroundingText(expected.length, 0)
+        val surrounding = ic.getSurroundingText(expected.length, 0, 0)
+        if (surrounding == null) {
+            Log.d(TAG, "replaceBeforeCursor: surrounding null")
+            return EditResult.MISMATCH
+        }
+        val sel = surrounding.selectionStart
+        if (sel != surrounding.selectionEnd || sel < expected.length) {
+            Log.d(TAG, "replaceBeforeCursor: sel invalid start=$sel end=${surrounding.selectionEnd} len=${expected.length}")
+            return EditResult.MISMATCH
+        }
+        if (surrounding.offset >= 0 && surrounding.offset + sel != cursor) {
+            Log.d(TAG, "replaceBeforeCursor: STALE offset=${surrounding.offset} sel=$sel cursor=$cursor")
+            return EditResult.STALE
+        }
+        val sub = surrounding.text.subSequence(sel - expected.length, sel)
+        if (!TextUtils.equals(sub, expected)) {
+            Log.d(TAG, "replaceBeforeCursor: text mismatch '$sub' != '$expected'")
+            return EditResult.MISMATCH
+        }
+
+        // Use setSelection to target the exact expected characters (including composing span)
+        // and replace them with commitText. This avoids deleteSurroundingText skipping composing
+        // text, preserves all formatting outside the replaced range, and cleanly commits the replacement.
+        if (expected.isNotEmpty()) {
+            ic.setSelection(cursor - expected.length, cursor)
+        }
         ic.commitText(replacement, 1, null)
+        Log.d(TAG, "replaceBeforeCursor: SUCCESS replaced '$expected' with '$replacement'")
         return EditResult.DONE
     }
 
