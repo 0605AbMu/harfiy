@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
-import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.view.accessibility.AccessibilityManager
@@ -77,11 +76,7 @@ class HarfiyTileService : TileService() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name)
-        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        if (enabledServices.contains(expectedComponent.flattenToString()) ||
-            enabledServices.contains("${packageName}/") ||
-            enabledServices.contains(HarfiyAccessibilityService::class.java.name)) {
+        if (HarfiyAccessibilityService.instance != null) {
             return true
         }
 

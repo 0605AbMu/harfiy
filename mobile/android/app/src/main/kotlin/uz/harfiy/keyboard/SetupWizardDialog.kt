@@ -2,6 +2,7 @@
 
 package uz.harfiy.keyboard
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.AppOpsManager
@@ -28,6 +29,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.accessibility.AccessibilityManager
 import androidx.core.graphics.toColorInt
 import androidx.core.content.edit
 import android.widget.*
@@ -1084,14 +1086,15 @@ class SetupWizardDialog(
     }
 
     private fun isAccessibilityEnabled(): Boolean {
-        val expectedService = ComponentName(context, HarfiyAccessibilityService::class.java).flattenToString()
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
+        if (HarfiyAccessibilityService.instance != null) {
+            return true
+        }
 
-        return enabledServices.split(":").any {
-            it.equals(expectedService, ignoreCase = true) || it.contains("uz.harfiy.keyboard")
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
+        val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        return list.any {
+            it.resolveInfo.serviceInfo.packageName == context.packageName &&
+            it.resolveInfo.serviceInfo.name.contains("HarfiyAccessibilityService")
         }
     }
 

@@ -1645,11 +1645,7 @@ class MainActivity : Activity() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponent = ComponentName(packageName, HarfiyAccessibilityService::class.java.name)
-        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        if (enabledServices.contains(expectedComponent.flattenToString()) ||
-            enabledServices.contains("${packageName}/") ||
-            enabledServices.contains(HarfiyAccessibilityService::class.java.name)) {
+        if (HarfiyAccessibilityService.instance != null) {
             return true
         }
 
