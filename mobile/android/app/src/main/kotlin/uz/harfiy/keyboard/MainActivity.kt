@@ -71,6 +71,8 @@ class MainActivity : Activity() {
     // Xiaomi Autostart UI components in Settings
     private var miuiAutostartSubtitle: TextView? = null
     private var miuiAutostartStatusPill: TextView? = null
+    private var batterySubtitle: TextView? = null
+    private var batteryStatusPill: TextView? = null
     private var activeWizardDialog: SetupWizardDialog? = null
 
     private var isUpdatingUI = false
@@ -217,7 +219,7 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener {
-                if (!isAccessibilityServiceEnabled()) {
+                if (!isAccessibilityServiceEnabled() || HarfiyAccessibilityService.instance == null) {
                     openAccessibilitySettings()
                 } else {
                     val isPaused = HarfiyAccessibilityService.isPaused(this@MainActivity)
@@ -278,13 +280,14 @@ class MainActivity : Activity() {
                 if (isUpdatingUI) return@setOnCheckedChangeListener
 
                 val isSystemActive = isAccessibilityServiceEnabled()
-                if (isChecked && !isSystemActive) {
+                val isServiceRunning = HarfiyAccessibilityService.instance != null
+                if (isChecked && (!isSystemActive || !isServiceRunning)) {
                     isUpdatingUI = true
                     this.isChecked = false
                     isUpdatingUI = false
 
                     openAccessibilitySettings()
-                } else if (isSystemActive) {
+                } else if (isSystemActive && isServiceRunning) {
                     HarfiyAccessibilityService.setPaused(this@MainActivity, !isChecked)
                     updateStatus()
                 }
@@ -597,6 +600,71 @@ class MainActivity : Activity() {
             settingsCard.addView(autostartRow)
             settingsCard.addView(createDivider())
         }
+
+        // Setting: Fonda to'xtovsiz ishlash (Battery Optimization Exemption)
+        val batteryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padV = dp(10)
+            setPadding(0, padV, 0, padV)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                requestIgnoreBatteryOptimization()
+            }
+        }
+
+        val batteryBadge = TextView(this).apply {
+            text = "🔋"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
+            }
+            background = GradientDrawable().apply {
+                setColor("#ECFDF5".toColorInt())
+                cornerRadius = dp(10).toFloat()
+            }
+        }
+        batteryRow.addView(batteryBadge)
+
+        val batteryTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            val t = TextView(context).apply {
+                text = "Fonda barqaror ishlash"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor("#0F172A".toColorInt())
+            }
+            batterySubtitle = TextView(context).apply {
+                textSize = 12f
+                setTextColor("#64748B".toColorInt())
+                setPadding(0, dp(1), 0, 0)
+            }
+            addView(t)
+            addView(batterySubtitle)
+        }
+        batteryRow.addView(batteryTextCol)
+
+        batteryStatusPill = TextView(this).apply {
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            val padH = dp(8)
+            val padV = dp(4)
+            setPadding(padH, padV, padH, padV)
+        }
+        batteryRow.addView(batteryStatusPill)
+
+        val batteryArrow = TextView(this).apply {
+            text = "›"
+            textSize = 22f
+            setTextColor("#94A3B8".toColorInt())
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        batteryRow.addView(batteryArrow)
+        settingsCard.addView(batteryRow)
+        settingsCard.addView(createDivider())
 
         // Setting 6: Boshlang'ich sozlash ustasi (Wizard)
         val wizardRow = LinearLayout(this).apply {
@@ -1222,15 +1290,16 @@ class MainActivity : Activity() {
     }
 
     private fun updateStatus() {
+        val isServiceRunning = HarfiyAccessibilityService.instance != null
         val isServiceEnabled = isAccessibilityServiceEnabled()
         val isPaused = HarfiyAccessibilityService.isPaused(this)
         val dp = resources.displayMetrics.density
 
         isUpdatingUI = true
-        heroSwitch.isChecked = isServiceEnabled && !isPaused
+        heroSwitch.isChecked = isServiceRunning && !isPaused
         isUpdatingUI = false
 
-        if (isServiceEnabled && !isPaused) {
+        if (isServiceRunning && !isPaused) {
             heroCard.background = GradientDrawable().apply {
                 setColor("#ECFDF5".toColorInt()) // Soft emerald tint
                 cornerRadius = 24 * dp
@@ -1246,7 +1315,7 @@ class MainActivity : Activity() {
             heroTitle.setTextColor("#065F46".toColorInt())
             heroSubtitle.text = "Klaviaturangizda yangi alifbo avtomatik to‘g‘rilanadi"
             heroSubtitle.setTextColor("#047857".toColorInt())
-        } else if (isServiceEnabled) {
+        } else if (isServiceRunning && isPaused) {
             heroCard.background = GradientDrawable().apply {
                 setColor("#FFFBEB".toColorInt()) // Soft amber tint
                 cornerRadius = 24 * dp
@@ -1262,6 +1331,22 @@ class MainActivity : Activity() {
             heroTitle.setTextColor("#92400E".toColorInt())
             heroSubtitle.text = "Qayta faollashtirish uchun bosing yoki yuqori menyudan yoqing"
             heroSubtitle.setTextColor("#B45309".toColorInt())
+        } else if (isServiceEnabled && !isServiceRunning) {
+            heroCard.background = GradientDrawable().apply {
+                setColor("#FFF7ED".toColorInt()) // Soft orange tint
+                cornerRadius = 24 * dp
+                setStroke((1.5f * dp).toInt(), "#FDBA74".toColorInt())
+            }
+            heroBadge.text = "🟠  QAYTA ISHGA TUSHIRISH KERAK"
+            heroBadge.setTextColor("#C2410C".toColorInt())
+            heroBadge.background = GradientDrawable().apply {
+                setColor("#FFEDD5".toColorInt())
+                cornerRadius = 10 * dp
+            }
+            heroTitle.text = "Xizmat to‘xtatilgan"
+            heroTitle.setTextColor("#9A3412".toColorInt())
+            heroSubtitle.text = "Tizim fonda to‘xtatgan. Qayta ulash uchun bosing"
+            heroSubtitle.setTextColor("#C2410C".toColorInt())
         } else {
             heroCard.background = GradientDrawable().apply {
                 setColor("#FFF1F2".toColorInt()) // Soft rose tint
@@ -1278,6 +1363,38 @@ class MainActivity : Activity() {
             heroTitle.setTextColor("#9F1239".toColorInt())
             heroSubtitle.text = "Klaviaturada harflarni to‘g‘rilash uchun bosing"
             heroSubtitle.setTextColor("#BE123C".toColorInt())
+        }
+
+        // Dynamically update Battery Optimization status card
+        if (batterySubtitle != null && batteryStatusPill != null) {
+            val isBatteryIgnored = isBatteryOptimizationIgnored()
+            if (isBatteryIgnored) {
+                batterySubtitle?.apply {
+                    text = "Cheklovsiz — Android Harfiyni fonda to‘xtatmaydi"
+                    setTextColor("#047857".toColorInt())
+                }
+                batteryStatusPill?.apply {
+                    text = "🟢 Cheklovsiz"
+                    setTextColor("#047857".toColorInt())
+                    background = GradientDrawable().apply {
+                        setColor("#D1FAE5".toColorInt())
+                        cornerRadius = 8 * dp
+                    }
+                }
+            } else {
+                batterySubtitle?.apply {
+                    text = "Tizim fonda to‘xtatib qo‘ymasligi uchun bosing"
+                    setTextColor("#B45309".toColorInt())
+                }
+                batteryStatusPill?.apply {
+                    text = "🟡 Cheklangan"
+                    setTextColor("#B45309".toColorInt())
+                    background = GradientDrawable().apply {
+                        setColor("#FEF3C7".toColorInt())
+                        cornerRadius = 8 * dp
+                    }
+                }
+            }
         }
 
         // Dynamically update Xiaomi Autostart status card
@@ -1699,6 +1816,30 @@ class MainActivity : Activity() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(intent)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Sozlamalarni ochib bo‘lmadi", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun isBatteryOptimizationIgnored(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager ?: return true
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun requestIgnoreBatteryOptimization() {
+        if (isBatteryOptimizationIgnored()) {
+            Toast.makeText(this, "Batareya cheklovi allaqachon olingan (Fonda to‘liq ishlaydi)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             } catch (_: Exception) {
                 Toast.makeText(this, "Sozlamalarni ochib bo‘lmadi", Toast.LENGTH_SHORT).show()
             }
