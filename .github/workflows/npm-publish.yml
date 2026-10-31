@@ -1,0 +1,64 @@
+name: Publish to GitHub Packages (npm)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g. 1.1.1, leave empty to use crates/wasm/Cargo.toml version)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run (test build and package without publishing)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build & Publish @0605abmu/harfiy-wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@0605abmu'
+
+      - name: Build WebAssembly package
+        run: ./scripts/build_web.sh
+
+      - name: Override version if specified
+        if: ${{ inputs.version != '' }}
+        working-directory: crates/wasm/pkg
+        run: |
+          npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Dry Run Publish
+        if: ${{ inputs.dry_run }}
+        working-directory: crates/wasm/pkg
+        run: |
+          echo "Performing npm publish --dry-run..."
+          npm publish --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        if: ${{ !inputs.dry_run }}
+        working-directory: crates/wasm/pkg
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

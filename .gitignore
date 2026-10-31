@@ -22,6 +22,10 @@ build/
 mobile/ios/Frameworks/
 mobile/android/app/src/main/jniLibs/
 
+# Web build outputs
+crates/wasm/pkg/
+crates/wasm/LICENSE
+
 mobile/android/local.properties
 mobile/android/.gradle/
 mobile/android/app/build/

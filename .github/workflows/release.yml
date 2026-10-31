@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -312,4 +313,57 @@ jobs:
           token: ${{ secrets.WINGET_TOKEN }}
           release-tag: ${{ steps.vars.outputs.tag }}
           installers-regex: '.*-windows-.*\.exe$'
+
+  # ===========================================================================
+  # NPM: Publish WebAssembly package to GitHub Packages (npm registry)
+  # ===========================================================================
+  publish-npm:
+    name: Publish to GitHub Packages (npm)
+    needs: [publish-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: vars
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@0605abmu'
+
+      - name: Build WebAssembly package
+        run: ./scripts/build_web.sh
+
+      - name: Sync package.json version with Git tag
+        working-directory: crates/wasm/pkg
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          if [ -n "$VERSION" ]; then
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          fi
+
+      - name: Publish to GitHub Packages
+        working-directory: crates/wasm/pkg
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Harfiy Web Core Demo</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 2rem 1rem;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    header {
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+    .badge {
+      display: inline-block;
+      background: #0284c7;
+      color: white;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-weight: bold;
+      vertical-align: middle;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .card h2 {
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      background: #0b1120;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      align-self: flex-start;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: var(--primary-hover);
+    }
+    .log-badge {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Harfiy WebAssembly Core <span class="badge">Rust Wasm</span></h1>
+      <p class="subtitle">Yagona Rust Engine (crates/engine) asosidagi WebAssembly moduli</p>
+    </header>
+
+    <!-- Real-time Typing Card -->
+    <div class="card">
+      <h2>⚡ Real-vaqtda yozish (FSM + Instant Undo)</h2>
+      <p class="subtitle">Bu yerda <code>sh</code>, <code>ch</code>, <code>o'</code>, <code>g'</code> deb yozing. Backspace bosilsa avtomatik asliga qaytadi.</p>
+      
+      <textarea id="liveInput" rows="4" placeholder="Masalan: shahar, choyxona, o'rmon, g'alaba deb yozing..."></textarea>
+      
+      <div class="status-bar">
+        <div>FSM Holati: <span id="fsmState" class="log-badge">idle</span></div>
+        <div>Oxirgi o'zgarish: <span id="lastAction" class="log-badge">yo'q</span></div>
+      </div>
+
+      <label class="toggle-row">
+        <input type="checkbox" id="toggleNg" />
+        <span><code>ng</code> &rarr; <code>ñ</code> qoidasini yoqish</span>
+      </label>
+    </div>
+
+    <!-- Batch Converter Card -->
+    <div class="card">
+      <h2>🔄 Katta matnni bir zumda o'girish (Batch Convert)</h2>
+      <textarea id="batchInput" rows="3" placeholder="O'zbekcha matn kiriting...">O'zbekiston Respublikasi - go'zal yurt. Shoshilmasdan choy iching.</textarea>
+      <button id="convertBtn">O'girish (Convert)</button>
+      
+      <div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.4rem;">Natija:</div>
+        <textarea id="batchOutput" rows="3" readonly style="background: #111827;"></textarea>
+      </div>
+
+      <div class="status-bar">
+        <div>Statistika: <span id="batchStats" class="log-badge">0 ta almashtirish</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { WasmHarfiyEngine, convert_text_with_stats } from '../pkg/harfiy_wasm.js';
+    import { attachHarfiy } from '../adapter.js';
+
+    async function run() {
+      // 1. Initialize WebAssembly
+      await init();
+      console.log('Harfiy WebAssembly engine loaded successfully!');
+
+      const liveInput = document.getElementById('liveInput');
+      const fsmState = document.getElementById('fsmState');
+      const lastAction = document.getElementById('lastAction');
+      const toggleNg = document.getElementById('toggleNg');
+
+      // 2. Real-time Engine
+      let engine = new WasmHarfiyEngine(false, true);
+
+      let detach = attachHarfiy(liveInput, {
+        engine: engine,
+        onTransform: (repl, trigger) => {
+          lastAction.textContent = `${trigger} -> ${repl}`;
+          fsmState.textContent = engine.state_name();
+        }
+      });
+
+      liveInput.addEventListener('keyup', () => {
+        fsmState.textContent = engine.state_name();
+      });
+
+      toggleNg.addEventListener('change', (e) => {
+        engine.set_enable_ng(e.target.checked);
+      });
+
+      // 3. Batch Converter
+      const batchInput = document.getElementById('batchInput');
+      const batchOutput = document.getElementById('batchOutput');
+      const convertBtn = document.getElementById('convertBtn');
+      const batchStats = document.getElementById('batchStats');
+
+      function doBatchConvert() {
+        const text = batchInput.value;
+        const res = convert_text_with_stats(text, toggleNg.checked, true);
+        batchOutput.value = res.text;
+        batchStats.textContent = `${res.conversions_count} ta harf o'zgartirildi`;
+      }
+
+      convertBtn.addEventListener('click', doBatchConvert);
+      doBatchConvert();
+    }
+
+    run().catch(console.error);
+  </script>
+</body>
+</html>
