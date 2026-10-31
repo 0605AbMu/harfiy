@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 harfiy-engine = { path = "../engine" }
+harfiy-docs = { path = "../docs" }
 wasm-bindgen = "0.2"
 
 [dev-dependencies]

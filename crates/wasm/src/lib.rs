@@ -298,6 +298,61 @@ pub fn is_word_delimiter(c: char) -> bool {
     harfiy_engine::is_word_delimiter(c)
 }
 
+/// Result of converting a document / file in memory.
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct WasmFileConversionResult {
+    data: Vec<u8>,
+    pub conversions_count: usize,
+}
+
+#[wasm_bindgen]
+impl WasmFileConversionResult {
+    #[wasm_bindgen(getter)]
+    pub fn data(&self) -> Vec<u8> {
+        self.data.clone()
+    }
+}
+
+/// Convert a file's byte contents using the Harfiy document converter.
+///
+/// Supports: .docx, .xlsx, .pptx, .odt, .ods, .odp, .rtf, .html, .txt, .md, .csv, .srt, etc.
+#[wasm_bindgen]
+pub fn convert_file_bytes(
+    extension: &str,
+    data: &[u8],
+    enable_ng: Option<bool>,
+    smart_apostrophe: Option<bool>,
+) -> Result<WasmFileConversionResult, JsValue> {
+    let opts = harfiy_docs::ConvertOptions {
+        enable_ng: enable_ng.unwrap_or(false),
+        smart_apostrophe: smart_apostrophe.unwrap_or(false),
+    };
+    match harfiy_docs::convert_bytes(extension, data, &opts) {
+        Ok(converted) => Ok(WasmFileConversionResult {
+            data: converted.data,
+            conversions_count: converted.conversions,
+        }),
+        Err(err) => Err(JsValue::from_str(&err.to_string())),
+    }
+}
+
+/// Check if a file extension is supported by the document converter.
+#[wasm_bindgen]
+pub fn is_supported_file_extension(extension: &str) -> bool {
+    let ext = extension.trim_start_matches('.').to_ascii_lowercase();
+    harfiy_docs::supported_extensions().contains(&ext.as_str())
+}
+
+/// List of supported file extensions (without leading dot).
+#[wasm_bindgen]
+pub fn supported_file_extensions() -> Vec<String> {
+    harfiy_docs::supported_extensions()
+        .into_iter()
+        .map(String::from)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,6 +365,15 @@ mod tests {
         let stats = convert_text_with_stats("shahar, choy, o'rmon, g'ildirak", None, None);
         assert_eq!(stats.text(), "şahar, çoy, örmon, ğildirak");
         assert_eq!(stats.conversions_count, 4);
+    }
+
+    #[test]
+    fn test_convert_file_bytes_txt() {
+        let input = "shahar choyxona o'rmon g'isht";
+        let res = convert_file_bytes("txt", input.as_bytes(), None, None).unwrap();
+        let converted_str = String::from_utf8(res.data).unwrap();
+        assert_eq!(converted_str.trim_start_matches('\u{feff}'), "şahar çoyxona örmon ğişt");
+        assert_eq!(res.conversions_count, 5);
     }
 
     #[test]

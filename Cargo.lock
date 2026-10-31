@@ -847,6 +847,7 @@ dependencies = [
 name = "harfiy-wasm"
 version = "1.2.0"
 dependencies = [
+ "harfiy-docs",
  "harfiy-engine",
  "wasm-bindgen",
  "wasm-bindgen-test",
