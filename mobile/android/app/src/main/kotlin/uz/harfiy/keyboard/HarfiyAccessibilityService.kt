@@ -355,35 +355,36 @@ class HarfiyAccessibilityService : AccessibilityService() {
         suppressTriggerEnd = -1
         if (insertEnd == suppressEnd) return
 
+        val tail = textBefore(event, insertEnd, 1)
+        val lastChar = if (!tail.isNullOrEmpty()) tail[tail.length - 1] else null
+        val isAtDelimiter = lastChar != null && isDelimiter(lastChar)
+
+        if (isAtDelimiter) {
+            mainHandler.removeCallbacks(flushRunnable)
+            checkWordBeforeDelimiter(event, pkgName, insertEnd)
+            deferredFrom = -1
+            return
+        }
+
         // When the keyboard has predictive text / composing active (Samsung Honeyboard, Gboard),
         // live modifications mid-word corrupt the keyboard's internal composing buffer.
+        // A keystroke that replaces N characters with N+1 is the definition of setComposingText.
         // We defer conversion until the word is committed upon space, punctuation, or composing end.
-        if (im?.isComposing == true) {
-            defer(insertEnd)
+        val isComposingKey = (im?.isComposing == true) || (removedCount > 0 && addedCount == removedCount + 1)
+        if (isComposingKey) {
+            defer(fromIndex)
             return
         }
 
         if (addedCount == 1) {
-            val tail = textBefore(event, insertEnd, 2)
-            if (tail != null && tail.isNotEmpty()) {
-                val currChar = tail[tail.length - 1]
-                val prevChar = if (tail.length >= 2) tail[tail.length - 2] else null
+            val pairTail = textBefore(event, insertEnd, 2)
+            if (pairTail != null && pairTail.length >= 2) {
+                val currChar = pairTail[pairTail.length - 1]
+                val prevChar = pairTail[pairTail.length - 2]
                 val edit = HarfiyEngine.planTail(prevChar, currChar, enableNg)
-                if (edit != null && tail.length >= edit.deleteCount) {
-                    val original = tail.subSequence(tail.length - edit.deleteCount, tail.length).toString()
+                if (edit != null && pairTail.length >= edit.deleteCount) {
+                    val original = pairTail.subSequence(pairTail.length - edit.deleteCount, pairTail.length).toString()
                     convert(pkgName, original, edit.replacement, listOf(edit.kind), insertEnd, undoable = true)
-                } else if (isDelimiter(currChar)) {
-                    if (deferredFrom >= 0) {
-                        mainHandler.removeCallbacks(flushRunnable)
-                        if (im?.isComposing != true) {
-                            flushDeferred()
-                        } else {
-                            mainHandler.postDelayed(flushRunnable, DEFERRED_FLUSH_DELAY_MS)
-                        }
-                    } else {
-                        // Safety net on space/delimiter: convert any missed pair in current word
-                        checkWordBeforeDelimiter(event, pkgName, insertEnd)
-                    }
                 }
             }
         } else if (addedCount <= MAX_BULK_INSERT) {
@@ -404,10 +405,15 @@ class HarfiyAccessibilityService : AccessibilityService() {
      * The character before the insert is included so a pair split across it still matches.
      */
     private fun convertInsert(event: AccessibilityEvent, pkgName: String, addedCount: Int, insertEnd: Int) {
+        val singleKey = event.removedCount + 1 == addedCount
+        if (singleKey) {
+            defer(event.fromIndex)
+            return
+        }
+
         val text = textBefore(event, insertEnd, addedCount + 1)?.toString() ?: return
         Log.d(TAG, "convertInsert: addedCount=$addedCount, insertEnd=$insertEnd, textBefore='$text'")
         val plan = planBeforeCursor(text, insertEnd) ?: return
-        val singleKey = event.removedCount + 1 == addedCount
         val undoable = singleKey && plan.original.length in 2..3 && plan.replacement.length == 1
         convert(pkgName, plan.original, plan.replacement, plan.kinds, insertEnd, undoable = undoable)
     }
@@ -431,19 +437,25 @@ class HarfiyAccessibilityService : AccessibilityService() {
     private fun planBeforeCursor(text: String, cursor: Int): Plan? {
         if (text.isEmpty()) return null
 
-        // Find the start of the word ending at or right before cursor
-        var wordStart = text.length
-        while (wordStart > 0 && text[wordStart - 1].isWhitespace()) wordStart--
+        // Skip any trailing delimiters (whitespace, punctuation) to find the word end
+        var wordEnd = text.length
+        while (wordEnd > 0 && isDelimiter(text[wordEnd - 1])) wordEnd--
+        if (wordEnd == 0) return null
+
+        // Find the start of the word
+        var wordStart = wordEnd
         while (wordStart > 0 && !isDelimiter(text[wordStart - 1])) wordStart--
-        val word = text.substring(wordStart)
-        val wordCursor = cursor
+        if (wordStart == wordEnd) return null
+
+        val word = text.substring(wordStart, wordEnd)
+        val wordCursor = cursor - (text.length - wordEnd)
         val wordTextStart = wordCursor - word.length
 
         val edits = HarfiyEngine.planEdits(word, enableNg).filter { wordTextStart + it.start != keptStart }
         if (edits.isEmpty()) return null
 
         val first = edits[0].start
-        val converted = buildString {
+        val convertedWord = buildString {
             var pos = first
             for (edit in edits) {
                 append(word, pos, edit.start)
@@ -452,7 +464,10 @@ class HarfiyAccessibilityService : AccessibilityService() {
             }
             append(word, pos, word.length)
         }
-        return Plan(word.substring(first), converted, edits.mapNotNull { it.kind })
+        val trailing = text.substring(wordEnd)
+        val original = word.substring(first) + trailing
+        val replacement = convertedWord + trailing
+        return Plan(original, replacement, edits.mapNotNull { it.kind })
     }
 
     /** Remembers that the text from [from] has conversions waiting for the keyboard to commit it. */
