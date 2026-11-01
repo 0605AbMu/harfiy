@@ -357,10 +357,8 @@ class HarfiyAccessibilityService : AccessibilityService() {
 
         // When the keyboard has predictive text / composing active (Samsung Honeyboard, Gboard),
         // live modifications mid-word corrupt the keyboard's internal composing buffer.
-        // A keystroke that replaces N characters with N+1 is the definition of setComposingText.
         // We defer conversion until the word is committed upon space, punctuation, or composing end.
-        val isComposingKey = (im?.isComposing == true) || (removedCount > 0 && addedCount == removedCount + 1)
-        if (isComposingKey) {
+        if (im?.isComposing == true) {
             defer(insertEnd)
             return
         }
@@ -406,16 +404,11 @@ class HarfiyAccessibilityService : AccessibilityService() {
      * The character before the insert is included so a pair split across it still matches.
      */
     private fun convertInsert(event: AccessibilityEvent, pkgName: String, addedCount: Int, insertEnd: Int) {
-        val singleKey = event.removedCount + 1 == addedCount
-        if (singleKey) {
-            defer(insertEnd)
-            return
-        }
-
         val text = textBefore(event, insertEnd, addedCount + 1)?.toString() ?: return
         Log.d(TAG, "convertInsert: addedCount=$addedCount, insertEnd=$insertEnd, textBefore='$text'")
         val plan = planBeforeCursor(text, insertEnd) ?: return
-        val undoable = plan.original.length in 2..3 && plan.replacement.length == 1
+        val singleKey = event.removedCount + 1 == addedCount
+        val undoable = singleKey && plan.original.length in 2..3 && plan.replacement.length == 1
         convert(pkgName, plan.original, plan.replacement, plan.kinds, insertEnd, undoable = undoable)
     }
 
@@ -468,7 +461,8 @@ class HarfiyAccessibilityService : AccessibilityService() {
         var start = from
         if (im.composingStart in 0 until start) start = im.composingStart
         if (deferredFrom < 0 || start < deferredFrom) deferredFrom = start
-        scheduleFlush(im)
+        // Never schedule flush here! Flushing must only happen when the word is finished
+        // (upon space, delimiter, or when composing ends).
     }
 
     /** Debounced to the keyboard's last update, so the flush sees the committed word. */
@@ -651,7 +645,15 @@ class HarfiyAccessibilityService : AccessibilityService() {
                     return EditResult.MISMATCH
                 }
 
-                ic.deleteSurroundingText(expected.length, 0)
+                val docSel = if (surrounding.offset >= 0) surrounding.offset + sel else sel
+                val selStart = docSel - expected.length
+                val selEnd = docSel
+                Log.d(TAG, "replaceBeforeCursor: offset=${surrounding.offset}, sel=$sel, docSel=$docSel, replacing [$selStart..$selEnd] ('$expected') with '$replacement'")
+                if (selStart >= 0 && selEnd >= selStart) {
+                    ic.setSelection(selStart, selEnd)
+                } else {
+                    ic.deleteSurroundingText(expected.length, 0)
+                }
             }
 
             ic.commitText(replacement, 1, null)
