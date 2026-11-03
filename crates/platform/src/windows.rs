@@ -1,8 +1,8 @@
 //! Windows implementation of keyboard interceptor and emitter using Win32 API.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicUsize, Ordering};
-use std::sync::Mutex;
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use harfiy_engine::rules::{is_first_trigger, match_rule};
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
@@ -867,11 +867,27 @@ struct HookState {
 static HOOK_STATE: Mutex<Option<HookState>> = Mutex::new(None);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
+#[derive(Debug, Clone, Copy)]
+struct PendingTrigger {
+    ch: char,
+    deadline: Instant,
+}
+
+struct TriggerBufferState {
+    pending: Option<PendingTrigger>,
+    shutdown: bool,
+    running: bool,
+}
+
+static TRIGGER_BUFFER_STATE: Mutex<TriggerBufferState> = Mutex::new(TriggerBufferState {
+    pending: None,
+    shutdown: false,
+    running: false,
+});
+static TRIGGER_BUFFER_CONDVAR: Condvar = Condvar::new();
+static BUFFER_TIMEOUT_MS: AtomicU64 = AtomicU64::new(250);
 static TRIGGER_BUFFERING_ENABLED: AtomicBool = AtomicBool::new(true);
 static ENABLE_NG_FLAG: AtomicBool = AtomicBool::new(false);
-static TRIGGER_BUFFER: Mutex<Option<char>> = Mutex::new(None);
-static BUFFER_TIMER_ID: AtomicUsize = AtomicUsize::new(0);
-const BUFFER_TIMEOUT_MS: u32 = 85;
 
 /// Enable or disable smart trigger buffering (default: true).
 pub fn set_trigger_buffering(enabled: bool) {
@@ -886,24 +902,101 @@ pub fn is_trigger_buffering_enabled() -> bool {
     TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed)
 }
 
+/// Set trigger buffering timeout in milliseconds (default: 250).
+pub fn set_trigger_buffer_timeout(timeout_ms: u64) {
+    BUFFER_TIMEOUT_MS.store(timeout_ms, Ordering::SeqCst);
+}
+
+/// Get current trigger buffering timeout in milliseconds.
+pub fn get_trigger_buffer_timeout() -> u64 {
+    BUFFER_TIMEOUT_MS.load(Ordering::Relaxed)
+}
+
 /// Configure 'ng' digraph recognition for the platform hook.
 pub fn set_enable_ng(enabled: bool) {
     ENABLE_NG_FLAG.store(enabled, Ordering::SeqCst);
 }
 
+fn ensure_timer_thread_started() {
+    let mut state = match TRIGGER_BUFFER_STATE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if state.running {
+        return;
+    }
+    state.running = true;
+    state.shutdown = false;
+
+    std::thread::Builder::new()
+        .name("harfiy-trigger-timer".into())
+        .spawn(|| {
+            let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+
+            loop {
+                if state.shutdown {
+                    state.running = false;
+                    break;
+                }
+
+                if let Some(pending) = state.pending {
+                    let now = Instant::now();
+                    if now >= pending.deadline {
+                        // Timer expired! Clear pending trigger
+                        state.pending = None;
+                        drop(state);
+
+                        // 1. Emit pending character directly to application
+                        let mut emitter = WindowsEmitter::new();
+                        let _ = emitter.emit_unicode(&pending.ch.to_string());
+
+                        // 2. Feed pending character to engine handler so state machine updates
+                        let mut hook_guard = HOOK_STATE.lock().unwrap();
+                        if let Some(hook) = hook_guard.as_mut() {
+                            let _ = (hook.handler)(InputEvent::Char(pending.ch));
+                        }
+                        drop(hook_guard);
+
+                        state = match TRIGGER_BUFFER_STATE.lock() {
+                            Ok(guard) => guard,
+                            Err(poisoned) => poisoned.into_inner(),
+                        };
+                    } else {
+                        let wait_dur = pending.deadline - now;
+                        match TRIGGER_BUFFER_CONDVAR.wait_timeout(state, wait_dur) {
+                            Ok((new_state, _)) => state = new_state,
+                            Err(poisoned) => state = poisoned.into_inner().0,
+                        }
+                    }
+                } else {
+                    match TRIGGER_BUFFER_CONDVAR.wait(state) {
+                        Ok(new_state) => state = new_state,
+                        Err(poisoned) => state = poisoned.into_inner(),
+                    }
+                }
+            }
+        })
+        .expect("Failed to spawn trigger buffer timer thread");
+}
+
 /// Flush any buffered trigger character immediately to the active application and engine.
 pub fn flush_pending_trigger() {
-    let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
-    if old_tid != 0 {
-        unsafe {
-            let _ = KillTimer(None, old_tid);
+    let pending_ch = {
+        let mut state = match TRIGGER_BUFFER_STATE.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let ch = state.pending.take().map(|p| p.ch);
+        if ch.is_some() {
+            TRIGGER_BUFFER_CONDVAR.notify_all();
         }
-    }
+        ch
+    };
 
-    let mut guard = TRIGGER_BUFFER.lock().unwrap();
-    if let Some(ch) = guard.take() {
-        drop(guard);
-
+    if let Some(ch) = pending_ch {
         // 1. Emit pending character directly to application
         let mut emitter = WindowsEmitter::new();
         let _ = emitter.emit_unicode(&ch.to_string());
@@ -1137,6 +1230,14 @@ impl WindowsInterceptor {
     /// Completely thread-safe and callable from any thread without deadlocking.
     pub fn stop_hook() -> Result<(), PlatformError> {
         flush_pending_trigger();
+        {
+            let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            state.shutdown = true;
+            TRIGGER_BUFFER_CONDVAR.notify_all();
+        }
         let mut state_guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = state_guard.take() {
             unsafe {
@@ -1187,6 +1288,16 @@ impl KeyboardInterceptor for WindowsInterceptor {
 
         self.is_running = true;
 
+        {
+            let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            state.shutdown = false;
+            state.pending = None;
+        }
+        ensure_timer_thread_started();
+
         // Run Windows message pump
         let mut msg = MSG::default();
         loop {
@@ -1194,10 +1305,6 @@ impl KeyboardInterceptor for WindowsInterceptor {
             if ret.0 <= 0 {
                 // WM_QUIT or error
                 break;
-            }
-            if msg.message == WM_TIMER {
-                flush_pending_trigger();
-                continue;
             }
             unsafe {
                 let _ = TranslateMessage(&msg);
@@ -1448,22 +1555,25 @@ unsafe extern "system" fn low_level_keyboard_proc(
     let enable_ng = ENABLE_NG_FLAG.load(Ordering::Relaxed);
 
     if buffering_enabled {
-        let mut buf_guard = TRIGGER_BUFFER.lock().unwrap();
-        if let Some(prev) = buf_guard.take() {
-            // A trigger character was buffered! Cancel the timer first
-            let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
-            if old_tid != 0 {
-                unsafe {
-                    let _ = KillTimer(None, old_tid);
-                }
+        let pending_trigger = {
+            let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let p = state.pending.take();
+            if p.is_some() {
+                TRIGGER_BUFFER_CONDVAR.notify_all();
             }
+            p
+        };
+
+        if let Some(pending) = pending_trigger {
+            let prev = pending.ch;
 
             match event {
                 InputEvent::Char(curr) => {
                     // Check if (prev, curr) forms a valid conversion rule (e.g. 'c' + 'h' -> 'ç')
                     if let Some(rule) = match_rule(prev, curr, enable_ng) {
-                        drop(buf_guard);
-
                         // 1. Emit replacement directly to target application (0 backspaces needed!)
                         let mut emitter = WindowsEmitter::new();
                         let _ = emitter.emit_unicode(rule.replacement);
@@ -1491,10 +1601,16 @@ unsafe extern "system" fn low_level_keyboard_proc(
                             let mut emitter = WindowsEmitter::new();
                             let _ = emitter.emit_unicode(&prev.to_string());
 
-                            *buf_guard = Some(curr);
-                            let tid = unsafe { SetTimer(None, 0, BUFFER_TIMEOUT_MS, None) };
-                            BUFFER_TIMER_ID.store(tid, Ordering::SeqCst);
-                            drop(buf_guard);
+                            ensure_timer_thread_started();
+                            let timeout = Duration::from_millis(BUFFER_TIMEOUT_MS.load(Ordering::Relaxed));
+                            let deadline = Instant::now() + timeout;
+
+                            let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                                Ok(guard) => guard,
+                                Err(poisoned) => poisoned.into_inner(),
+                            };
+                            state.pending = Some(PendingTrigger { ch: curr, deadline });
+                            TRIGGER_BUFFER_CONDVAR.notify_all();
 
                             return LRESULT(1);
                         } else {
@@ -1504,7 +1620,6 @@ unsafe extern "system" fn low_level_keyboard_proc(
                                 let _ = (state.handler)(InputEvent::Char(curr));
                             }
                             drop(state_guard);
-                            drop(buf_guard);
 
                             // Emit both characters atomically to target application in order
                             let mut emitter = WindowsEmitter::new();
@@ -1516,12 +1631,9 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 }
                 InputEvent::Special(SpecialKey::Backspace) => {
                     // Backspace cancels uncommitted trigger character with zero side effects
-                    drop(buf_guard);
                     return LRESULT(1);
                 }
                 InputEvent::Special(special) => {
-                    drop(buf_guard);
-
                     // Flush prev character to application
                     let mut emitter = WindowsEmitter::new();
                     let _ = emitter.emit_unicode(&prev.to_string());
@@ -1541,16 +1653,16 @@ unsafe extern "system" fn low_level_keyboard_proc(
             // Buffer is empty: if current character is a first trigger, buffer it!
             if let InputEvent::Char(ch) = event {
                 if is_first_trigger(ch, enable_ng) {
-                    *buf_guard = Some(ch);
-                    let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
-                    if old_tid != 0 {
-                        unsafe {
-                            let _ = KillTimer(None, old_tid);
-                        }
-                    }
-                    let tid = unsafe { SetTimer(None, 0, BUFFER_TIMEOUT_MS, None) };
-                    BUFFER_TIMER_ID.store(tid, Ordering::SeqCst);
-                    drop(buf_guard);
+                    ensure_timer_thread_started();
+                    let timeout = Duration::from_millis(BUFFER_TIMEOUT_MS.load(Ordering::Relaxed));
+                    let deadline = Instant::now() + timeout;
+
+                    let mut state = match TRIGGER_BUFFER_STATE.lock() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+                    state.pending = Some(PendingTrigger { ch, deadline });
+                    TRIGGER_BUFFER_CONDVAR.notify_all();
 
                     // Swallow trigger character so target application doesn't see it yet
                     return LRESULT(1);

@@ -35,6 +35,10 @@ pub struct AppConfig {
     #[serde(default = "default_trigger_buffering")]
     pub trigger_buffering: bool,
 
+    /// Trigger buffering timeout in milliseconds (default: 250)
+    #[serde(default = "default_trigger_buffer_timeout_ms")]
+    pub trigger_buffer_timeout_ms: u64,
+
     /// Total number of converted digraphs and apostrophes
     #[serde(default)]
     pub total_conversions: u64,
@@ -64,6 +68,10 @@ fn default_trigger_buffering() -> bool {
     true
 }
 
+fn default_trigger_buffer_timeout_ms() -> u64 {
+    250
+}
+
 fn default_excluded_apps() -> Vec<String> {
     vec![]
 }
@@ -78,6 +86,7 @@ impl Default for AppConfig {
             convert_hotkey: default_convert_hotkey(),
             excluded_apps: default_excluded_apps(),
             trigger_buffering: default_trigger_buffering(),
+            trigger_buffer_timeout_ms: default_trigger_buffer_timeout_ms(),
             total_conversions: 0,
         }
     }
