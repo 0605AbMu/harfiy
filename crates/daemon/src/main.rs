@@ -200,6 +200,8 @@ fn run_daemon(no_tray: bool) {
 
     harfiy_platform::set_excluded_apps(&app_config.excluded_apps);
     harfiy_platform::set_game_mode(app_config.game_mode);
+    harfiy_platform::set_trigger_buffering(app_config.trigger_buffering);
+    harfiy_platform::set_enable_ng(app_config.enable_ng);
     let mut running_apps = harfiy_platform::scan_running_apps();
     let is_autostart = harfiy_platform::is_autostart_enabled();
 

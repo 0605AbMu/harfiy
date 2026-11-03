@@ -31,6 +31,10 @@ pub struct AppConfig {
     #[serde(default = "default_excluded_apps")]
     pub excluded_apps: Vec<String>,
 
+    /// Smart trigger buffering to eliminate autocomplete conflicts and flicker (default: true)
+    #[serde(default = "default_trigger_buffering")]
+    pub trigger_buffering: bool,
+
     /// Total number of converted digraphs and apostrophes
     #[serde(default)]
     pub total_conversions: u64,
@@ -56,6 +60,10 @@ fn default_convert_hotkey() -> String {
     "Ctrl+Alt+U".to_string()
 }
 
+fn default_trigger_buffering() -> bool {
+    true
+}
+
 fn default_excluded_apps() -> Vec<String> {
     vec![]
 }
@@ -69,6 +77,7 @@ impl Default for AppConfig {
             hotkey: default_hotkey(),
             convert_hotkey: default_convert_hotkey(),
             excluded_apps: default_excluded_apps(),
+            trigger_buffering: default_trigger_buffering(),
             total_conversions: 0,
         }
     }

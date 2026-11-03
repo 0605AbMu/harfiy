@@ -1,9 +1,10 @@
 //! Windows implementation of keyboard interceptor and emitter using Win32 API.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
+use harfiy_engine::rules::{is_first_trigger, match_rule};
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, BOOL, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
@@ -866,6 +867,55 @@ struct HookState {
 static HOOK_STATE: Mutex<Option<HookState>> = Mutex::new(None);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
+static TRIGGER_BUFFERING_ENABLED: AtomicBool = AtomicBool::new(true);
+static ENABLE_NG_FLAG: AtomicBool = AtomicBool::new(false);
+static TRIGGER_BUFFER: Mutex<Option<char>> = Mutex::new(None);
+static BUFFER_TIMER_ID: AtomicUsize = AtomicUsize::new(0);
+const BUFFER_TIMEOUT_MS: u32 = 85;
+
+/// Enable or disable smart trigger buffering (default: true).
+pub fn set_trigger_buffering(enabled: bool) {
+    TRIGGER_BUFFERING_ENABLED.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        flush_pending_trigger();
+    }
+}
+
+/// Check if smart trigger buffering is currently enabled.
+pub fn is_trigger_buffering_enabled() -> bool {
+    TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Configure 'ng' digraph recognition for the platform hook.
+pub fn set_enable_ng(enabled: bool) {
+    ENABLE_NG_FLAG.store(enabled, Ordering::SeqCst);
+}
+
+/// Flush any buffered trigger character immediately to the active application and engine.
+pub fn flush_pending_trigger() {
+    let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
+    if old_tid != 0 {
+        unsafe {
+            let _ = KillTimer(None, old_tid);
+        }
+    }
+
+    let mut guard = TRIGGER_BUFFER.lock().unwrap();
+    if let Some(ch) = guard.take() {
+        drop(guard);
+
+        // 1. Emit pending character directly to application
+        let mut emitter = WindowsEmitter::new();
+        let _ = emitter.emit_unicode(&ch.to_string());
+
+        // 2. Feed pending character to engine handler so state machine updates
+        let mut hook_guard = HOOK_STATE.lock().unwrap();
+        if let Some(state) = hook_guard.as_mut() {
+            let _ = (state.handler)(InputEvent::Char(ch));
+        }
+    }
+}
+
 /// Synthetic keyboard event emitter using `SendInput`.
 #[derive(Debug, Clone, Default)]
 pub struct WindowsEmitter;
@@ -890,7 +940,7 @@ impl KeyboardEmitter for WindowsEmitter {
                 Anonymous: INPUT_0 {
                     ki: KEYBDINPUT {
                         wVk: VK_BACK,
-                        wScan: 0,
+                        wScan: 0x000E,
                         dwFlags: KEYBD_EVENT_FLAGS(0),
                         time: 0,
                         dwExtraInfo: HARFIY_MAGIC_FLAG,
@@ -903,7 +953,7 @@ impl KeyboardEmitter for WindowsEmitter {
                 Anonymous: INPUT_0 {
                     ki: KEYBDINPUT {
                         wVk: VK_BACK,
-                        wScan: 0,
+                        wScan: 0x000E,
                         dwFlags: KEYEVENTF_KEYUP,
                         time: 0,
                         dwExtraInfo: HARFIY_MAGIC_FLAG,
@@ -980,77 +1030,92 @@ impl KeyboardEmitter for WindowsEmitter {
         replacement: &str,
     ) -> Result<(), PlatformError> {
         let code_units: Vec<u16> = replacement.encode_utf16().collect();
-        let total_inputs = backspaces_count * 2 + code_units.len() * 2;
-        if total_inputs == 0 {
+        if backspaces_count == 0 && code_units.is_empty() {
             return Ok(());
         }
 
-        let mut inputs = Vec::with_capacity(total_inputs);
+        // 1. Backspaces (key down + key up) sent first with hardware scan code
+        if backspaces_count > 0 {
+            let mut bs_inputs = Vec::with_capacity(backspaces_count * 2);
+            for _ in 0..backspaces_count {
+                bs_inputs.push(INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_BACK,
+                            wScan: 0x000E,
+                            dwFlags: KEYBD_EVENT_FLAGS(0),
+                            time: 0,
+                            dwExtraInfo: HARFIY_MAGIC_FLAG,
+                        },
+                    },
+                });
+                bs_inputs.push(INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_BACK,
+                            wScan: 0x000E,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: HARFIY_MAGIC_FLAG,
+                        },
+                    },
+                });
+            }
 
-        // 1. Backspaces (key down + key up)
-        for _ in 0..backspaces_count {
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_BACK,
-                        wScan: 0,
-                        dwFlags: KEYBD_EVENT_FLAGS(0),
-                        time: 0,
-                        dwExtraInfo: HARFIY_MAGIC_FLAG,
-                    },
-                },
-            });
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_BACK,
-                        wScan: 0,
-                        dwFlags: KEYEVENTF_KEYUP,
-                        time: 0,
-                        dwExtraInfo: HARFIY_MAGIC_FLAG,
-                    },
-                },
-            });
+            let sent = unsafe { SendInput(&bs_inputs, std::mem::size_of::<INPUT>() as i32) };
+            if sent as usize != bs_inputs.len() {
+                return Err(PlatformError::SendInputFailed(format!(
+                    "Expected to send {} backspace inputs, sent {}",
+                    bs_inputs.len(),
+                    sent
+                )));
+            }
+
+            // Yield / micro-sleep to allow target application (Electron, Chromium, WPF)
+            // to process Backspace before receiving replacement unicode characters
+            std::thread::sleep(std::time::Duration::from_millis(8));
         }
 
         // 2. Unicode characters (key down + key up)
-        for cu in code_units {
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(0),
-                        wScan: cu,
-                        dwFlags: KEYEVENTF_UNICODE,
-                        time: 0,
-                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+        if !code_units.is_empty() {
+            let mut unicode_inputs = Vec::with_capacity(code_units.len() * 2);
+            for cu in code_units {
+                unicode_inputs.push(INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VIRTUAL_KEY(0),
+                            wScan: cu,
+                            dwFlags: KEYEVENTF_UNICODE,
+                            time: 0,
+                            dwExtraInfo: HARFIY_MAGIC_FLAG,
+                        },
                     },
-                },
-            });
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(0),
-                        wScan: cu,
-                        dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                        time: 0,
-                        dwExtraInfo: HARFIY_MAGIC_FLAG,
+                });
+                unicode_inputs.push(INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VIRTUAL_KEY(0),
+                            wScan: cu,
+                            dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: HARFIY_MAGIC_FLAG,
+                        },
                     },
-                },
-            });
-        }
+                });
+            }
 
-        // Send all synthetic inputs in one single atomic batch
-        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
-        if sent as usize != inputs.len() {
-            return Err(PlatformError::SendInputFailed(format!(
-                "Expected to send {} inputs, sent {}",
-                inputs.len(),
-                sent
-            )));
+            let sent = unsafe { SendInput(&unicode_inputs, std::mem::size_of::<INPUT>() as i32) };
+            if sent as usize != unicode_inputs.len() {
+                return Err(PlatformError::SendInputFailed(format!(
+                    "Expected to send {} unicode inputs, sent {}",
+                    unicode_inputs.len(),
+                    sent
+                )));
+            }
         }
 
         Ok(())
@@ -1071,6 +1136,7 @@ impl WindowsInterceptor {
     /// Globally stop and unhook the Windows low-level keyboard hook.
     /// Completely thread-safe and callable from any thread without deadlocking.
     pub fn stop_hook() -> Result<(), PlatformError> {
+        flush_pending_trigger();
         let mut state_guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = state_guard.take() {
             unsafe {
@@ -1128,6 +1194,10 @@ impl KeyboardInterceptor for WindowsInterceptor {
             if ret.0 <= 0 {
                 // WM_QUIT or error
                 break;
+            }
+            if msg.message == WM_TIMER {
+                flush_pending_trigger();
+                continue;
             }
             unsafe {
                 let _ = TranslateMessage(&msg);
@@ -1341,16 +1411,19 @@ unsafe extern "system" fn low_level_keyboard_proc(
 
     // Do not interfere with Ctrl or Alt combinations (e.g. Ctrl+S, Ctrl+C)
     if is_control_or_alt_down() {
+        flush_pending_trigger();
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
 
     // Do not interfere if the active foreground window belongs to an excluded application
     if is_current_app_excluded() {
+        flush_pending_trigger();
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
 
     // Do not interfere if Game Mode is active and foreground window is a fullscreen application / game
     if is_foreground_fullscreen() {
+        flush_pending_trigger();
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
 
@@ -1363,28 +1436,149 @@ unsafe extern "system" fn low_level_keyboard_proc(
         None
     };
 
-    if let Some(event) = input_event {
-        let mut state_guard = HOOK_STATE.lock().unwrap();
-        if let Some(state) = state_guard.as_mut() {
-            let action = (state.handler)(event);
-            match action {
-                KeyAction::PassThrough => {
+    if input_event.is_none() {
+        flush_pending_trigger();
+        return CallNextHookEx(None, n_code, w_param, l_param);
+    }
+
+    let event = input_event.unwrap();
+
+    // Smart Trigger Buffering (eliminates autocomplete conflicts and visual flicker)
+    let buffering_enabled = TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed);
+    let enable_ng = ENABLE_NG_FLAG.load(Ordering::Relaxed);
+
+    if buffering_enabled {
+        let mut buf_guard = TRIGGER_BUFFER.lock().unwrap();
+        if let Some(prev) = buf_guard.take() {
+            // A trigger character was buffered! Cancel the timer first
+            let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
+            if old_tid != 0 {
+                unsafe {
+                    let _ = KillTimer(None, old_tid);
+                }
+            }
+
+            match event {
+                InputEvent::Char(curr) => {
+                    // Check if (prev, curr) forms a valid conversion rule (e.g. 'c' + 'h' -> 'ç')
+                    if let Some(rule) = match_rule(prev, curr, enable_ng) {
+                        drop(buf_guard);
+
+                        // 1. Emit replacement directly to target application (0 backspaces needed!)
+                        let mut emitter = WindowsEmitter::new();
+                        let _ = emitter.emit_unicode(rule.replacement);
+
+                        // 2. Synchronize engine state and increment conversion counter
+                        let mut state_guard = HOOK_STATE.lock().unwrap();
+                        if let Some(state) = state_guard.as_mut() {
+                            let _ = (state.handler)(InputEvent::Char(prev));
+                            let _ = (state.handler)(InputEvent::Char(curr));
+                        }
+
+                        // 3. Swallow physical second character
+                        return LRESULT(1);
+                    } else {
+                        // (prev, curr) does not match a conversion rule
+                        // Feed prev character to engine
+                        let mut state_guard = HOOK_STATE.lock().unwrap();
+                        if let Some(state) = state_guard.as_mut() {
+                            let _ = (state.handler)(InputEvent::Char(prev));
+                        }
+                        drop(state_guard);
+
+                        if is_first_trigger(curr, enable_ng) {
+                            // curr is itself a first trigger (e.g. 'c' followed by 's')
+                            let mut emitter = WindowsEmitter::new();
+                            let _ = emitter.emit_unicode(&prev.to_string());
+
+                            *buf_guard = Some(curr);
+                            let tid = unsafe { SetTimer(None, 0, BUFFER_TIMEOUT_MS, None) };
+                            BUFFER_TIMER_ID.store(tid, Ordering::SeqCst);
+                            drop(buf_guard);
+
+                            return LRESULT(1);
+                        } else {
+                            // curr is not a trigger, feed curr to engine
+                            let mut state_guard = HOOK_STATE.lock().unwrap();
+                            if let Some(state) = state_guard.as_mut() {
+                                let _ = (state.handler)(InputEvent::Char(curr));
+                            }
+                            drop(state_guard);
+                            drop(buf_guard);
+
+                            // Emit both characters atomically to target application in order
+                            let mut emitter = WindowsEmitter::new();
+                            let _ = emitter.emit_unicode(&format!("{}{}", prev, curr));
+
+                            return LRESULT(1);
+                        }
+                    }
+                }
+                InputEvent::Special(SpecialKey::Backspace) => {
+                    // Backspace cancels uncommitted trigger character with zero side effects
+                    drop(buf_guard);
+                    return LRESULT(1);
+                }
+                InputEvent::Special(special) => {
+                    drop(buf_guard);
+
+                    // Flush prev character to application
+                    let mut emitter = WindowsEmitter::new();
+                    let _ = emitter.emit_unicode(&prev.to_string());
+
+                    // Feed prev character then special key to engine
+                    let mut state_guard = HOOK_STATE.lock().unwrap();
+                    if let Some(state) = state_guard.as_mut() {
+                        let _ = (state.handler)(InputEvent::Char(prev));
+                        let _ = (state.handler)(InputEvent::Special(special));
+                    }
+
+                    // Forward special key to application
                     return CallNextHookEx(None, n_code, w_param, l_param);
                 }
-                KeyAction::Suppress => {
-                    // Swallow the keystroke
+            }
+        } else {
+            // Buffer is empty: if current character is a first trigger, buffer it!
+            if let InputEvent::Char(ch) = event {
+                if is_first_trigger(ch, enable_ng) {
+                    *buf_guard = Some(ch);
+                    let old_tid = BUFFER_TIMER_ID.swap(0, Ordering::SeqCst);
+                    if old_tid != 0 {
+                        unsafe {
+                            let _ = KillTimer(None, old_tid);
+                        }
+                    }
+                    let tid = unsafe { SetTimer(None, 0, BUFFER_TIMEOUT_MS, None) };
+                    BUFFER_TIMER_ID.store(tid, Ordering::SeqCst);
+                    drop(buf_guard);
+
+                    // Swallow trigger character so target application doesn't see it yet
                     return LRESULT(1);
                 }
-                KeyAction::Transform {
-                    backspaces_count,
-                    replacement,
-                } => {
-                    // Emit backspace(s) and replacement text atomically in one batch
-                    let mut emitter = WindowsEmitter::new();
-                    let _ = emitter.emit_transform(backspaces_count, replacement);
-                    // Swallow the current key event so it is not typed
-                    return LRESULT(1);
-                }
+            }
+        }
+    }
+
+    let mut state_guard = HOOK_STATE.lock().unwrap();
+    if let Some(state) = state_guard.as_mut() {
+        let action = (state.handler)(event);
+        match action {
+            KeyAction::PassThrough => {
+                return CallNextHookEx(None, n_code, w_param, l_param);
+            }
+            KeyAction::Suppress => {
+                // Swallow the keystroke
+                return LRESULT(1);
+            }
+            KeyAction::Transform {
+                backspaces_count,
+                replacement,
+            } => {
+                // Emit backspace(s) and replacement text atomically in one batch
+                let mut emitter = WindowsEmitter::new();
+                let _ = emitter.emit_transform(backspaces_count, replacement);
+                // Swallow the current key event so it is not typed
+                return LRESULT(1);
             }
         }
     }
