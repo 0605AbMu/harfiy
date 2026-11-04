@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template for the Microsoft Store build of Harfiy.
+  build_msix.ps1 replaces the $...$ placeholders; Identity Name and Publisher must
+  match "Product identity" in Partner Center exactly.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity
+    Name="$IdentityName$"
+    Publisher="$Publisher$"
+    Version="$Version$"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Harfiy</DisplayName>
+    <PublisherDisplayName>$PublisherDisplayName$</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>O'zbek lotin alifbosidagi sh, ch, o', g' birikmalarini yozish paytida ş, ç, ö, ğ harflariga almashtiruvchi fon xizmati.</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1809: the oldest release whose app execution alias and startup task behaviour we rely on -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="uz-Latn" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Harfiy" Executable="harfiy.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Harfiy"
+        Description="O'zbek alifbosi avto-konvertatsiyasi"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Replaces the HKCU Run key, which MSIX virtualizes; the tray toggle drives it -->
+        <desktop:Extension Category="windows.startupTask">
+          <desktop:StartupTask TaskId="HarfiyStartup" Enabled="true" DisplayName="Harfiy" />
+        </desktop:Extension>
+
+        <!-- Keeps the command line (harfiy status / stop / logs) available -->
+        <uap3:Extension Category="windows.appExecutionAlias">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="harfiy.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Desktop (Win32) app: the low-level keyboard hook and SendInput need full trust -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

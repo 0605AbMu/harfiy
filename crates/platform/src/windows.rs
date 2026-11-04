@@ -5,14 +5,17 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
+use windows::ApplicationModel::{StartupTask, StartupTaskState};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, BOOL, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+    CloseHandle, GetLastError, APPMODEL_ERROR_NO_PACKAGE, BOOL, COLORREF, HANDLE, HWND, LPARAM,
+    LRESULT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW,
     EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn,
     DT_CENTER, DT_SINGLELINE, DT_VCENTER, HBRUSH, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
 };
+use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
 };
@@ -25,6 +28,7 @@ use windows::Win32::System::Threading::{
     CreateMutexW, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST,
     OPENFILENAMEW,
@@ -609,8 +613,34 @@ const AUTOSTART_SUBKEY: windows::core::PCWSTR =
     windows::core::w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const AUTOSTART_NAME: windows::core::PCWSTR = windows::core::w!("Harfiy");
 
+/// Task id of the `windows.startupTask` declared in packaging/windows/msix/AppxManifest.xml.
+const MSIX_STARTUP_TASK_ID: &str = "HarfiyStartup";
+
+/// Whether Harfiy runs from an MSIX package (the Microsoft Store build).
+pub fn is_packaged() -> bool {
+    let mut len = 0u32;
+    let rc = unsafe { GetCurrentPackageFullName(&mut len, windows::core::PWSTR::null()) };
+    rc != APPMODEL_ERROR_NO_PACKAGE
+}
+
+/// The MSIX startup task. MSIX virtualizes HKCU, so the Run key does not work there.
+fn msix_startup_task() -> windows::core::Result<StartupTask> {
+    // WinRT needs the thread initialized; an already initialized thread keeps its mode
+    unsafe {
+        let _ = RoInitialize(RO_INIT_MULTITHREADED);
+    }
+    StartupTask::GetAsync(&windows::core::HSTRING::from(MSIX_STARTUP_TASK_ID))?.get()
+}
+
 /// Check if Harfiy is configured to run on Windows startup in Registry.
 pub fn is_autostart_enabled() -> bool {
+    if is_packaged() {
+        return msix_startup_task()
+            .and_then(|task| task.State())
+            .is_ok_and(|state| {
+                state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy
+            });
+    }
     unsafe {
         let mut hkey = HKEY::default();
         if RegOpenKeyExW(HKEY_CURRENT_USER, AUTOSTART_SUBKEY, 0, KEY_READ, &mut hkey).is_ok() {
@@ -626,6 +656,9 @@ pub fn is_autostart_enabled() -> bool {
 
 /// Enable or disable running Harfiy on Windows startup via Registry.
 pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
+    if is_packaged() {
+        return set_msix_autostart(enabled);
+    }
     unsafe {
         let mut hkey = HKEY::default();
         let open_res = RegOpenKeyExW(
@@ -661,6 +694,26 @@ pub fn set_autostart(enabled: bool) -> Result<(), PlatformError> {
             let _ = RegCloseKey(hkey);
         }
         Ok(())
+    }
+}
+
+fn set_msix_autostart(enabled: bool) -> Result<(), PlatformError> {
+    let to_error = |e: windows::core::Error| PlatformError::Other(e.to_string());
+    let task = msix_startup_task().map_err(to_error)?;
+    if !enabled {
+        return task.Disable().map_err(to_error);
+    }
+    let state = task
+        .RequestEnableAsync()
+        .and_then(|op| op.get())
+        .map_err(to_error)?;
+    if state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy {
+        Ok(())
+    } else {
+        // Once the user turns the task off in Windows settings, only they can turn it on
+        Err(PlatformError::PermissionDenied(
+            "Windows sozlamalarida (Ilovalar > Ishga tushirish) Harfiy yoqilishi kerak".to_string(),
+        ))
     }
 }
 

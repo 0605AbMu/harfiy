@@ -25,6 +25,10 @@ windows = { version = "0.58", features = [
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_System_EventLog",
+    "Win32_System_WinRT",
+    "Win32_Storage_Packaging_Appx",
+    "ApplicationModel",
+    "Foundation",
 ] }
 
 [target.'cfg(unix)'.dependencies]
