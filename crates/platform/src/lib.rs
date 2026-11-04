@@ -102,40 +102,40 @@ pub use self::windows_ui::{pick_save_file_dialog, ProgressWindow};
 #[cfg(not(windows))]
 pub fn init_dpi_awareness() {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_trigger_buffering(_enabled: bool) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_enable_ng(_enabled: bool) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn flush_pending_trigger() {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_conversion_active(_active: bool) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_conversion_active() -> bool {
     true
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_autocomplete_fix(_enabled: bool) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_autocomplete_fix_enabled() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_trigger_buffering_enabled() -> bool {
     false
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn set_trigger_buffer_timeout(_timeout_ms: u64) {}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn get_trigger_buffer_timeout() -> u64 {
     250
 }
@@ -148,6 +148,13 @@ pub use self::macos::{
     scan_running_apps, set_autostart, set_clipboard_text, set_excluded_apps, set_game_mode,
     show_confirm_dialog, show_custom_hud, show_info_dialog, show_status_hud, MacOsEmitter,
     MacOsInterceptor, HARFIY_MAGIC_FLAG,
+};
+
+#[cfg(target_os = "macos")]
+pub use self::macos::{
+    flush_pending_trigger, get_trigger_buffer_timeout, is_autocomplete_fix_enabled,
+    is_conversion_active, is_trigger_buffering_enabled, set_autocomplete_fix,
+    set_conversion_active, set_enable_ng, set_trigger_buffer_timeout, set_trigger_buffering,
 };
 
 #[cfg(not(any(windows, target_os = "macos")))]
