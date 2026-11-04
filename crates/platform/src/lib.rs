@@ -6,6 +6,7 @@
 
 pub mod mock;
 pub mod os_log;
+pub mod trigger_buffer;
 
 #[cfg(windows)]
 pub mod windows;
