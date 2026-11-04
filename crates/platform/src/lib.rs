@@ -89,8 +89,9 @@ pub use self::windows::{
     is_current_app_excluded, is_foreground_fullscreen, is_game_mode, pick_executable_dialog,
     pick_file_dialog, pump_messages, scan_running_apps, set_autostart, set_clipboard_text,
     set_excluded_apps, set_game_mode, show_confirm_dialog, show_custom_hud, show_info_dialog,
-    flush_pending_trigger, get_trigger_buffer_timeout, is_trigger_buffering_enabled,
-    set_enable_ng, set_trigger_buffer_timeout, set_trigger_buffering,
+    flush_pending_trigger, get_trigger_buffer_timeout, is_autocomplete_fix_enabled,
+    is_conversion_active, is_trigger_buffering_enabled, set_autocomplete_fix,
+    set_conversion_active, set_enable_ng, set_trigger_buffer_timeout, set_trigger_buffering,
     show_status_hud, stop_running_daemon, SingleInstanceGuard, WindowsEmitter, WindowsInterceptor,
     HARFIY_MAGIC_FLAG,
 };
@@ -109,6 +110,22 @@ pub fn set_enable_ng(_enabled: bool) {}
 
 #[cfg(not(windows))]
 pub fn flush_pending_trigger() {}
+
+#[cfg(not(windows))]
+pub fn set_conversion_active(_active: bool) {}
+
+#[cfg(not(windows))]
+pub fn is_conversion_active() -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+pub fn set_autocomplete_fix(_enabled: bool) {}
+
+#[cfg(not(windows))]
+pub fn is_autocomplete_fix_enabled() -> bool {
+    false
+}
 
 #[cfg(not(windows))]
 pub fn is_trigger_buffering_enabled() -> bool {

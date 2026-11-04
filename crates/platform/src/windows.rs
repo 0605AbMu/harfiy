@@ -1,10 +1,9 @@
 //! Windows implementation of keyboard interceptor and emitter using Win32 API.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use harfiy_engine::rules::{is_first_trigger, match_rule};
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, BOOL, COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM,
@@ -31,11 +30,12 @@ use windows::Win32::UI::Controls::Dialogs::{
     OPENFILENAMEW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, HKL, INPUT, INPUT_0,
-    INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY,
-    VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LCONTROL,
-    VK_LEFT, VK_LMENU, VK_LWIN, VK_MENU, VK_NEXT, VK_OEM_3, VK_OEM_7, VK_PRIOR, VK_RCONTROL,
-    VK_RETURN, VK_RIGHT, VK_RMENU, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
+    GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx,
+    HKL, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY,
+    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE,
+    VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN,
+    VK_MENU, VK_NEXT, VK_OEM_3, VK_OEM_7, VK_PACKET, VK_PRIOR, VK_RCONTROL, VK_RETURN, VK_RIGHT,
+    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows,
@@ -43,12 +43,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
     PostQuitMessage, PostThreadMessageW, RegisterClassW, SetLayeredWindowAttributes, SetTimer,
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, HHOOK, IDYES,
-    KBDLLHOOKSTRUCT, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MSG,
-    PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNOACTIVATE, WH_KEYBOARD_LL, WM_APP,
-    WM_DESTROY, WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LWA_ALPHA, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK,
+    MB_YESNO, MSG, PM_NOREMOVE, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNOACTIVATE,
+    WH_KEYBOARD_LL, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_PAINT, WM_QUIT, WM_SYSKEYDOWN, WM_TIMER,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
+use crate::trigger_buffer::{BufferAction, Held, TriggerBuffer};
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
 
 /// Magic tag attached to `dwExtraInfo` in synthetic keystrokes to prevent infinite loops.
@@ -867,27 +868,47 @@ struct HookState {
 static HOOK_STATE: Mutex<Option<HookState>> = Mutex::new(None);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Debug, Clone, Copy)]
-struct PendingTrigger {
-    ch: char,
-    deadline: Instant,
+/// Tag for keystrokes the hook types in place of physical ones. Unlike
+/// [`HARFIY_MAGIC_FLAG`], the hook counts these back in, so a physical key that
+/// overtakes them in the input queue can be re-queued behind them.
+const HARFIY_ORDERED_FLAG: usize = 0x48415247; // "HARG"
+
+/// Thread message asking the hook thread to type the held trigger key.
+const WM_HARFIY_FLUSH: u32 = WM_APP + 2;
+
+/// Replayed keystrokes that do not come back within this window were dropped
+/// (e.g. by another hook) and must stop holding up physical keys.
+const IN_FLIGHT_STALE_AFTER: Duration = Duration::from_millis(200);
+
+/// Typed before erasing text, so it replaces an inline autocomplete selection.
+/// ZERO WIDTH SPACE is invisible and, unlike real whitespace, does not trigger
+/// word-boundary features (AutoCorrect, editor input rules) on the way.
+const AUTOCOMPLETE_PLACEHOLDER: &str = "\u{200B}";
+
+/// Physical key data needed to replay a held key exactly as the user typed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RawKey {
+    vk: u16,
+    scan: u16,
+    extended: bool,
+    /// Whether Shift, Ctrl, Alt, Win or CapsLock was in effect when the key was pressed.
+    modified: bool,
+    /// Foreground window the key was typed into.
+    window: isize,
 }
 
-struct TriggerBufferState {
-    pending: Option<PendingTrigger>,
-    shutdown: bool,
-    running: bool,
-}
-
-static TRIGGER_BUFFER_STATE: Mutex<TriggerBufferState> = Mutex::new(TriggerBufferState {
-    pending: None,
-    shutdown: false,
-    running: false,
-});
-static TRIGGER_BUFFER_CONDVAR: Condvar = Condvar::new();
+static TRIGGER_BUFFER: Mutex<TriggerBuffer<RawKey>> = Mutex::new(TriggerBuffer::new());
+/// Thread timer of the hook thread that types a held key once the user pauses.
+static TRIGGER_TIMER_ID: AtomicUsize = AtomicUsize::new(0);
 static BUFFER_TIMEOUT_MS: AtomicU64 = AtomicU64::new(250);
 static TRIGGER_BUFFERING_ENABLED: AtomicBool = AtomicBool::new(true);
+static CONVERSION_ACTIVE: AtomicBool = AtomicBool::new(true);
+static AUTOCOMPLETE_FIX: AtomicBool = AtomicBool::new(true);
 static ENABLE_NG_FLAG: AtomicBool = AtomicBool::new(false);
+
+/// Keystrokes typed by the hook that it has not seen come back yet.
+static IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+static IN_FLIGHT_SINCE: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Enable or disable smart trigger buffering (default: true).
 pub fn set_trigger_buffering(enabled: bool) {
@@ -912,101 +933,318 @@ pub fn get_trigger_buffer_timeout() -> u64 {
     BUFFER_TIMEOUT_MS.load(Ordering::Relaxed)
 }
 
+/// Tell the hook whether conversion is active (Harfiy is not paused).
+/// While paused, trigger keys are no longer held back.
+pub fn set_conversion_active(active: bool) {
+    CONVERSION_ACTIVE.store(active, Ordering::SeqCst);
+    if !active {
+        flush_pending_trigger();
+    }
+}
+
+/// Check if conversion is active (Harfiy is not paused).
+pub fn is_conversion_active() -> bool {
+    CONVERSION_ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Enable or disable dismissing inline autocomplete before erasing characters (default: true).
+///
+/// When an application selects an inline suggestion after the typed text, a Backspace
+/// erases the suggestion instead of the typed letter. A placeholder typed first replaces
+/// the selection, so one extra Backspace then erases exactly the intended text.
+pub fn set_autocomplete_fix(enabled: bool) {
+    AUTOCOMPLETE_FIX.store(enabled, Ordering::SeqCst);
+}
+
+/// Check if inline autocomplete dismissal is enabled.
+pub fn is_autocomplete_fix_enabled() -> bool {
+    AUTOCOMPLETE_FIX.load(Ordering::Relaxed)
+}
+
 /// Configure 'ng' digraph recognition for the platform hook.
 pub fn set_enable_ng(enabled: bool) {
     ENABLE_NG_FLAG.store(enabled, Ordering::SeqCst);
+    // A held key was judged by the previous rule set.
+    flush_pending_trigger();
 }
 
-fn ensure_timer_thread_started() {
-    let mut state = match TRIGGER_BUFFER_STATE.lock() {
+fn lock_trigger_buffer() -> MutexGuard<'static, TriggerBuffer<RawKey>> {
+    match TRIGGER_BUFFER.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Type any held trigger key immediately.
+///
+/// Callable from any thread: the work is handed to the hook thread so that it stays
+/// ordered with live keystrokes.
+pub fn flush_pending_trigger() {
+    let thread_id = HOOK_THREAD_ID.load(Ordering::SeqCst);
+    if thread_id == 0 {
+        // No hook is running, so nothing can be held.
+        return;
+    }
+    if thread_id == unsafe { GetCurrentThreadId() } {
+        release_held_key();
+    } else {
+        unsafe {
+            let _ = PostThreadMessageW(thread_id, WM_HARFIY_FLUSH, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+/// Type the held trigger key, if any. Runs on the hook thread.
+fn release_held_key() {
+    kill_trigger_timer();
+    let mut out = Injection::default();
+    release_held_into(&mut out);
+    out.send();
+}
+
+/// Queue the held trigger key, if any, to be typed.
+fn release_held_into(out: &mut Injection) {
+    let held = lock_trigger_buffer().release();
+    if let Some(held) = held {
+        kill_trigger_timer();
+        type_released(out, held);
+    }
+}
+
+/// Queue a released key: replayed as typed, unless the engine converts it together
+/// with the letter before it (e.g. a released 'g' after an 'n' that already reached the app).
+fn type_released(out: &mut Injection, held: Held<RawKey>) {
+    if !held_in_focus(held) {
+        // Typing it now would put it into another window, possibly as a shortcut there
+        reset_engine();
+        return;
+    }
+    match feed_engine(InputEvent::Char(held.ch)) {
+        KeyAction::PassThrough => out.replay(held),
+        KeyAction::Suppress => {}
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => out.transform(backspaces_count, replacement),
+    }
+}
+
+/// Arm (or re-arm) the hook thread's timer that types a held key once the user pauses.
+fn arm_trigger_timer() {
+    let timeout = BUFFER_TIMEOUT_MS
+        .load(Ordering::Relaxed)
+        .clamp(1, u32::MAX as u64) as u32;
+    // Passing the current id re-arms the existing thread timer instead of adding another.
+    let current = TRIGGER_TIMER_ID.load(Ordering::Relaxed);
+    let id = unsafe { SetTimer(None, current, timeout, None) };
+    TRIGGER_TIMER_ID.store(id, Ordering::Relaxed);
+}
+
+fn kill_trigger_timer() {
+    let id = TRIGGER_TIMER_ID.swap(0, Ordering::Relaxed);
+    if id != 0 {
+        unsafe {
+            let _ = KillTimer(None, id);
+        }
+    }
+}
+
+/// Whether the window a held key was typed into still has the focus.
+fn held_in_focus(held: Held<RawKey>) -> bool {
+    held.key.window == foreground_window()
+}
+
+fn foreground_window() -> isize {
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
+/// Feed one event to the engine handler installed by `run`.
+fn feed_engine(event: InputEvent) -> KeyAction {
+    // A panic must not unwind out of the hook callback, so a poisoned lock is reused
+    let mut state_guard = match HOOK_STATE.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if state.running {
-        return;
+    match state_guard.as_mut() {
+        Some(state) => (state.handler)(event),
+        None => KeyAction::PassThrough,
     }
-    state.running = true;
-    state.shutdown = false;
-
-    std::thread::Builder::new()
-        .name("harfiy-trigger-timer".into())
-        .spawn(|| {
-            let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-
-            loop {
-                if state.shutdown {
-                    state.running = false;
-                    break;
-                }
-
-                if let Some(pending) = state.pending {
-                    let now = Instant::now();
-                    if now >= pending.deadline {
-                        // Timer expired! Clear pending trigger
-                        state.pending = None;
-                        drop(state);
-
-                        // 1. Emit pending character directly to application
-                        let mut emitter = WindowsEmitter::new();
-                        let _ = emitter.emit_unicode(&pending.ch.to_string());
-
-                        // 2. Feed pending character to engine handler so state machine updates
-                        let mut hook_guard = HOOK_STATE.lock().unwrap();
-                        if let Some(hook) = hook_guard.as_mut() {
-                            let _ = (hook.handler)(InputEvent::Char(pending.ch));
-                        }
-                        drop(hook_guard);
-
-                        state = match TRIGGER_BUFFER_STATE.lock() {
-                            Ok(guard) => guard,
-                            Err(poisoned) => poisoned.into_inner(),
-                        };
-                    } else {
-                        let wait_dur = pending.deadline - now;
-                        match TRIGGER_BUFFER_CONDVAR.wait_timeout(state, wait_dur) {
-                            Ok((new_state, _)) => state = new_state,
-                            Err(poisoned) => state = poisoned.into_inner().0,
-                        }
-                    }
-                } else {
-                    match TRIGGER_BUFFER_CONDVAR.wait(state) {
-                        Ok(new_state) => state = new_state,
-                        Err(poisoned) => state = poisoned.into_inner(),
-                    }
-                }
-            }
-        })
-        .expect("Failed to spawn trigger buffer timer thread");
 }
 
-/// Flush any buffered trigger character immediately to the active application and engine.
-pub fn flush_pending_trigger() {
-    let pending_ch = {
-        let mut state = match TRIGGER_BUFFER_STATE.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        let ch = state.pending.take().map(|p| p.ch);
-        if ch.is_some() {
-            TRIGGER_BUFFER_CONDVAR.notify_all();
-        }
-        ch
+/// Return the engine to its idle state, e.g. after a shortcut changed the text unseen.
+fn reset_engine() {
+    // Escape resets the engine and has no other effect on it
+    let _ = feed_engine(InputEvent::Special(SpecialKey::Escape));
+}
+
+/// Forget everything the buffer and the engine know about the text before the caret.
+fn forget_context() {
+    lock_trigger_buffer().reset();
+    reset_engine();
+}
+
+fn note_injected(count: u32) {
+    if count == 0 {
+        return;
+    }
+    IN_FLIGHT.fetch_add(count, Ordering::SeqCst);
+    if let Ok(mut since) = IN_FLIGHT_SINCE.lock() {
+        *since = Some(Instant::now());
+    }
+}
+
+fn note_injection_arrived() {
+    // Only the hook thread touches the counter, so load + store cannot race.
+    let n = IN_FLIGHT.load(Ordering::SeqCst);
+    if n > 0 {
+        IN_FLIGHT.store(n - 1, Ordering::SeqCst);
+    }
+}
+
+/// Whether the current physical key overtook keystrokes the hook typed earlier,
+/// in which case it must be re-queued behind them to keep the typing order.
+fn overtakes_injection() -> bool {
+    if IN_FLIGHT.load(Ordering::SeqCst) == 0 {
+        return false;
+    }
+    let stale = match IN_FLIGHT_SINCE.lock() {
+        Ok(since) => !matches!(*since, Some(t) if t.elapsed() <= IN_FLIGHT_STALE_AFTER),
+        Err(_) => true,
     };
+    if stale {
+        IN_FLIGHT.store(0, Ordering::SeqCst);
+        return false;
+    }
+    true
+}
 
-    if let Some(ch) = pending_ch {
-        // 1. Emit pending character directly to application
-        let mut emitter = WindowsEmitter::new();
-        let _ = emitter.emit_unicode(&ch.to_string());
+/// Keystrokes the hook types, in order, in place of physical ones.
+#[derive(Default)]
+struct Injection {
+    inputs: Vec<INPUT>,
+    /// Index of the first input that must wait until the target application has
+    /// processed the Backspaces before it.
+    settle_at: Option<usize>,
+}
 
-        // 2. Feed pending character to engine handler so state machine updates
-        let mut hook_guard = HOOK_STATE.lock().unwrap();
-        if let Some(state) = hook_guard.as_mut() {
-            let _ = (state.handler)(InputEvent::Char(ch));
+impl Injection {
+    fn is_empty(&self) -> bool {
+        self.inputs.is_empty()
+    }
+
+    fn push(&mut self, vk: u16, scan: u16, flags: KEYBD_EVENT_FLAGS) {
+        self.inputs.push(INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: scan,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: HARFIY_ORDERED_FLAG,
+                },
+            },
+        });
+    }
+
+    /// Press a physical key, and release it too when `release` is set.
+    fn key(&mut self, key: RawKey, release: bool) {
+        if key.vk == VK_PACKET.0 {
+            // Unicode input injected by another program carries the character in the scan code.
+            self.push(0, key.scan, KEYEVENTF_UNICODE);
+            if release {
+                self.push(0, key.scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+            }
+            return;
+        }
+        let flags = if key.extended {
+            KEYEVENTF_EXTENDEDKEY
+        } else {
+            KEYBD_EVENT_FLAGS(0)
+        };
+        self.push(key.vk, key.scan, flags);
+        if release {
+            self.push(key.vk, key.scan, flags | KEYEVENTF_KEYUP);
         }
     }
+
+    fn text(&mut self, text: &str) {
+        for cu in text.encode_utf16() {
+            self.push(0, cu, KEYEVENTF_UNICODE);
+            self.push(0, cu, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        }
+    }
+
+    /// Type a held key the way the user typed it.
+    fn replay(&mut self, held: Held<RawKey>) {
+        if held.key.modified || modifiers_in_effect() {
+            // Replaying the raw key under other modifiers could produce another
+            // character or a shortcut; typing the character itself cannot.
+            let mut buf = [0u8; 4];
+            self.text(held.ch.encode_utf8(&mut buf));
+        } else {
+            // A real key press keeps keydown-driven behaviour (shortcuts, autocomplete
+            // widgets) working, unlike a Unicode packet.
+            self.key(held.key, true);
+        }
+    }
+
+    /// Erase `backspaces` characters before the caret and type `replacement`.
+    fn transform(&mut self, backspaces: usize, replacement: &str) {
+        if backspaces > 0 {
+            let mut count = backspaces;
+            if AUTOCOMPLETE_FIX.load(Ordering::Relaxed) {
+                self.text(AUTOCOMPLETE_PLACEHOLDER);
+                count += 1;
+            }
+            let backspace = RawKey {
+                vk: VK_BACK.0,
+                scan: 0x000E,
+                extended: false,
+                modified: false,
+                window: 0,
+            };
+            for _ in 0..count {
+                self.key(backspace, true);
+            }
+            self.settle_at = Some(self.inputs.len());
+        }
+        self.text(replacement);
+    }
+
+    fn send(self) {
+        let split = self.settle_at.unwrap_or(self.inputs.len());
+        let (erase, rest) = self.inputs.split_at(split);
+        send_ordered(erase);
+        if !erase.is_empty() && !rest.is_empty() {
+            // Yield / micro-sleep to allow target application (Electron, Chromium, WPF)
+            // to process Backspace before receiving replacement unicode characters
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        send_ordered(rest);
+    }
+}
+
+fn send_ordered(inputs: &[INPUT]) {
+    if inputs.is_empty() {
+        return;
+    }
+    let sent = unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) };
+    note_injected(sent);
+}
+
+fn is_key_down(vk: VIRTUAL_KEY) -> bool {
+    unsafe { (GetAsyncKeyState(vk.0 as i32) as u16 & 0x8000) != 0 }
+}
+
+/// Whether Shift, Ctrl, Alt or Win is held, or CapsLock is on.
+fn modifiers_in_effect() -> bool {
+    is_key_down(VK_SHIFT)
+        || is_key_down(VK_CONTROL)
+        || is_key_down(VK_MENU)
+        || is_key_down(VK_LWIN)
+        || is_key_down(VK_RWIN)
+        || unsafe { (GetKeyState(VK_CAPITAL.0 as i32) & 0x0001) != 0 }
 }
 
 /// Synthetic keyboard event emitter using `SendInput`.
@@ -1229,15 +1467,8 @@ impl WindowsInterceptor {
     /// Globally stop and unhook the Windows low-level keyboard hook.
     /// Completely thread-safe and callable from any thread without deadlocking.
     pub fn stop_hook() -> Result<(), PlatformError> {
+        // Handled by the hook thread before the WM_QUIT posted below
         flush_pending_trigger();
-        {
-            let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.shutdown = true;
-            TRIGGER_BUFFER_CONDVAR.notify_all();
-        }
         let mut state_guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = state_guard.take() {
             unsafe {
@@ -1288,17 +1519,11 @@ impl KeyboardInterceptor for WindowsInterceptor {
 
         self.is_running = true;
 
-        {
-            let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.shutdown = false;
-            state.pending = None;
-        }
-        ensure_timer_thread_started();
+        lock_trigger_buffer().reset();
+        IN_FLIGHT.store(0, Ordering::SeqCst);
 
-        // Run Windows message pump
+        // Run Windows message pump. The trigger timer and flush requests are handled here,
+        // on the hook thread, so they never race with the hook callback.
         let mut msg = MSG::default();
         loop {
             let ret = unsafe { GetMessageW(&mut msg, None, 0, 0) };
@@ -1306,12 +1531,24 @@ impl KeyboardInterceptor for WindowsInterceptor {
                 // WM_QUIT or error
                 break;
             }
+            if msg.hwnd.0.is_null() {
+                let timer_id = TRIGGER_TIMER_ID.load(Ordering::Relaxed);
+                let is_trigger_timer =
+                    msg.message == WM_TIMER && timer_id != 0 && msg.wParam.0 == timer_id;
+                if is_trigger_timer || msg.message == WM_HARFIY_FLUSH {
+                    // The user paused (or a flush was requested): type the held key
+                    release_held_key();
+                    continue;
+                }
+            }
             unsafe {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
 
+        // Type a key still held when the hook stops, so it is not lost
+        release_held_key();
         self.is_running = false;
         let _ = Self::stop_hook();
         Ok(())
@@ -1496,6 +1733,12 @@ unsafe extern "system" fn low_level_keyboard_proc(
 
     let kbd = *(l_param.0 as *const KBDLLHOOKSTRUCT);
 
+    // Keystrokes typed by the hook coming back through it: count them in
+    if kbd.dwExtraInfo == HARFIY_ORDERED_FLAG {
+        note_injection_arrived();
+        return CallNextHookEx(None, n_code, w_param, l_param);
+    }
+
     // Infinite loop protection: ignore synthetic events injected by Harfiy
     if kbd.dwExtraInfo == HARFIY_MAGIC_FLAG {
         return CallNextHookEx(None, n_code, w_param, l_param);
@@ -1507,193 +1750,172 @@ unsafe extern "system" fn low_level_keyboard_proc(
     }
 
     let vk = VIRTUAL_KEY(kbd.vkCode as u16);
-
-    // Modifier keys (Shift, Ctrl, Alt, Win, CapsLock) are not processed directly
-    if matches!(
-        vk,
-        VK_SHIFT | VK_CONTROL | VK_MENU | VK_LWIN | VK_RWIN | VK_CAPITAL
-    ) {
-        return CallNextHookEx(None, n_code, w_param, l_param);
-    }
-
-    // Do not interfere with Ctrl or Alt combinations (e.g. Ctrl+S, Ctrl+C)
-    if is_control_or_alt_down() {
-        flush_pending_trigger();
-        return CallNextHookEx(None, n_code, w_param, l_param);
-    }
-
-    // Do not interfere if the active foreground window belongs to an excluded application
-    if is_current_app_excluded() {
-        flush_pending_trigger();
-        return CallNextHookEx(None, n_code, w_param, l_param);
-    }
-
-    // Do not interfere if Game Mode is active and foreground window is a fullscreen application / game
-    if is_foreground_fullscreen() {
-        flush_pending_trigger();
-        return CallNextHookEx(None, n_code, w_param, l_param);
-    }
-
-    // Determine InputEvent
-    let input_event = if let Some(special) = map_special_key(vk) {
-        Some(InputEvent::Special(special))
-    } else if let Some(ch) = vk_to_unicode(vk, kbd.scanCode) {
-        Some(InputEvent::Char(ch))
-    } else {
-        None
+    let key = RawKey {
+        vk: vk.0,
+        scan: kbd.scanCode as u16,
+        extended: (kbd.flags.0 & LLKHF_EXTENDED.0) != 0,
+        modified: modifiers_in_effect(),
+        window: foreground_window(),
     };
 
-    if input_event.is_none() {
-        flush_pending_trigger();
+    let mut out = Injection::default();
+    let forward = handle_key_down(vk, kbd.scanCode, key, &mut out);
+
+    // Keystrokes injected from inside the hook arrive after the current key, so once
+    // anything is queued the current key is replayed behind it instead of passed on.
+    if forward && out.is_empty() && !overtakes_injection() {
         return CallNextHookEx(None, n_code, w_param, l_param);
     }
+    if forward {
+        out.key(key, false);
+    }
+    out.send();
+    LRESULT(1)
+}
 
-    let event = input_event.unwrap();
+/// Decide what happens to a physical key press. Keystrokes to type go into `out`;
+/// returns whether the key itself should still reach the application, after `out`.
+fn handle_key_down(vk: VIRTUAL_KEY, scan_code: u32, key: RawKey, out: &mut Injection) -> bool {
+    match vk {
+        // Shift and CapsLock only change the next character, which may still complete a pair
+        VK_SHIFT | VK_LSHIFT | VK_RSHIFT | VK_CAPITAL => return true,
+        // AltGr types characters on many layouts; it also sends a fake LCtrl with scan code 0x21D
+        VK_RMENU => return true,
+        VK_LCONTROL if scan_code & 0x200 != 0 => return true,
+        // Ctrl, Alt and Win start a shortcut: type the held key before the shortcut applies
+        VK_CONTROL | VK_LCONTROL | VK_RCONTROL | VK_MENU | VK_LMENU | VK_LWIN | VK_RWIN => {
+            release_held_into(out);
+            return true;
+        }
+        _ => {}
+    }
+
+    // Do not interfere with shortcuts (e.g. Ctrl+S, Win+S), excluded applications, or
+    // fullscreen games while Game Mode is active. What such a key does to the text is
+    // unknown, so the engine starts over.
+    if is_control_or_alt_down()
+        || is_key_down(VK_LWIN)
+        || is_key_down(VK_RWIN)
+        || is_current_app_excluded()
+        || is_foreground_fullscreen()
+    {
+        release_held_into(out);
+        forget_context();
+        return true;
+    }
+
+    let event = match map_special_key(vk) {
+        Some(special) => InputEvent::Special(special),
+        None => match vk_to_unicode(vk, scan_code) {
+            Some(ch) => InputEvent::Char(ch),
+            None => {
+                release_held_into(out);
+                forget_context();
+                return true;
+            }
+        },
+    };
 
     // Smart Trigger Buffering (eliminates autocomplete conflicts and visual flicker)
-    let buffering_enabled = TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed);
-    let enable_ng = ENABLE_NG_FLAG.load(Ordering::Relaxed);
+    if !TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed)
+        || !CONVERSION_ACTIVE.load(Ordering::Relaxed)
+    {
+        release_held_into(out);
+        return apply_engine(event, out);
+    }
 
-    if buffering_enabled {
-        let pending_trigger = {
-            let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let p = state.pending.take();
-            if p.is_some() {
-                TRIGGER_BUFFER_CONDVAR.notify_all();
-            }
-            p
+    let (held_before, step) = {
+        let mut buffer = lock_trigger_buffer();
+        buffer.set_enable_ng(ENABLE_NG_FLAG.load(Ordering::Relaxed));
+        let held_before = buffer.held();
+        let step = match event {
+            InputEvent::Char(ch) => buffer.on_char(ch, key),
+            InputEvent::Special(special) => buffer.on_special(special),
         };
+        (held_before, step)
+    };
 
-        if let Some(pending) = pending_trigger {
-            let prev = pending.ch;
+    if let Some(held) = step.release {
+        kill_trigger_timer();
+        type_released(out, held);
+    }
 
-            match event {
-                InputEvent::Char(curr) => {
-                    // Check if (prev, curr) forms a valid conversion rule (e.g. 'c' + 'h' -> 'ç')
-                    if let Some(rule) = match_rule(prev, curr, enable_ng) {
-                        // 1. Emit replacement directly to target application (0 backspaces needed!)
-                        let mut emitter = WindowsEmitter::new();
-                        let _ = emitter.emit_unicode(rule.replacement);
-
-                        // 2. Synchronize engine state and increment conversion counter
-                        let mut state_guard = HOOK_STATE.lock().unwrap();
-                        if let Some(state) = state_guard.as_mut() {
-                            let _ = (state.handler)(InputEvent::Char(prev));
-                            let _ = (state.handler)(InputEvent::Char(curr));
-                        }
-
-                        // 3. Swallow physical second character
-                        return LRESULT(1);
-                    } else {
-                        // (prev, curr) does not match a conversion rule
-                        // Feed prev character to engine
-                        let mut state_guard = HOOK_STATE.lock().unwrap();
-                        if let Some(state) = state_guard.as_mut() {
-                            let _ = (state.handler)(InputEvent::Char(prev));
-                        }
-                        drop(state_guard);
-
-                        if is_first_trigger(curr, enable_ng) {
-                            // curr is itself a first trigger (e.g. 'c' followed by 's')
-                            let mut emitter = WindowsEmitter::new();
-                            let _ = emitter.emit_unicode(&prev.to_string());
-
-                            ensure_timer_thread_started();
-                            let timeout = Duration::from_millis(BUFFER_TIMEOUT_MS.load(Ordering::Relaxed));
-                            let deadline = Instant::now() + timeout;
-
-                            let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                                Ok(guard) => guard,
-                                Err(poisoned) => poisoned.into_inner(),
-                            };
-                            state.pending = Some(PendingTrigger { ch: curr, deadline });
-                            TRIGGER_BUFFER_CONDVAR.notify_all();
-
-                            return LRESULT(1);
-                        } else {
-                            // curr is not a trigger, feed curr to engine
-                            let mut state_guard = HOOK_STATE.lock().unwrap();
-                            if let Some(state) = state_guard.as_mut() {
-                                let _ = (state.handler)(InputEvent::Char(curr));
-                            }
-                            drop(state_guard);
-
-                            // Emit both characters atomically to target application in order
-                            let mut emitter = WindowsEmitter::new();
-                            let _ = emitter.emit_unicode(&format!("{}{}", prev, curr));
-
-                            return LRESULT(1);
-                        }
-                    }
-                }
-                InputEvent::Special(SpecialKey::Backspace) => {
-                    // Backspace cancels uncommitted trigger character with zero side effects
-                    return LRESULT(1);
-                }
-                InputEvent::Special(special) => {
-                    // Flush prev character to application
-                    let mut emitter = WindowsEmitter::new();
-                    let _ = emitter.emit_unicode(&prev.to_string());
-
-                    // Feed prev character then special key to engine
-                    let mut state_guard = HOOK_STATE.lock().unwrap();
-                    if let Some(state) = state_guard.as_mut() {
-                        let _ = (state.handler)(InputEvent::Char(prev));
-                        let _ = (state.handler)(InputEvent::Special(special));
-                    }
-
-                    // Forward special key to application
-                    return CallNextHookEx(None, n_code, w_param, l_param);
-                }
+    match step.action {
+        BufferAction::Pass => apply_engine(event, out),
+        BufferAction::Hold => {
+            // Swallow the trigger so the application (and its autocomplete) does not see it yet
+            arm_trigger_timer();
+            false
+        }
+        BufferAction::Convert { .. } => {
+            kill_trigger_timer();
+            match held_before {
+                Some(held) => convert_held_pair(held, event, out),
+                None => apply_engine(event, out),
             }
-        } else {
-            // Buffer is empty: if current character is a first trigger, buffer it!
-            if let InputEvent::Char(ch) = event {
-                if is_first_trigger(ch, enable_ng) {
-                    ensure_timer_thread_started();
-                    let timeout = Duration::from_millis(BUFFER_TIMEOUT_MS.load(Ordering::Relaxed));
-                    let deadline = Instant::now() + timeout;
-
-                    let mut state = match TRIGGER_BUFFER_STATE.lock() {
-                        Ok(guard) => guard,
-                        Err(poisoned) => poisoned.into_inner(),
-                    };
-                    state.pending = Some(PendingTrigger { ch, deadline });
-                    TRIGGER_BUFFER_CONDVAR.notify_all();
-
-                    // Swallow trigger character so target application doesn't see it yet
-                    return LRESULT(1);
-                }
+        }
+        BufferAction::Cancel => {
+            // Backspace erased the held key, which the application never saw. Show the
+            // engine both, so it leaves the post-conversion (Instant Undo) state as usual.
+            kill_trigger_timer();
+            if let Some(held) = held_before {
+                let _ = feed_engine(InputEvent::Char(held.ch));
+                let _ = feed_engine(InputEvent::Special(SpecialKey::Backspace));
             }
+            false
+        }
+    }
+}
+
+/// Type the conversion of a held key and the key completing its pair. The engine has the
+/// final say; the buffer only spares the Backspace that would collide with autocomplete.
+fn convert_held_pair(held: Held<RawKey>, event: InputEvent, out: &mut Injection) -> bool {
+    if !held_in_focus(held) {
+        reset_engine();
+        return apply_engine(event, out);
+    }
+
+    match feed_engine(InputEvent::Char(held.ch)) {
+        KeyAction::PassThrough => {}
+        KeyAction::Suppress => return apply_engine(event, out),
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => {
+            // The engine paired the held key with the letter before it instead
+            out.transform(backspaces_count, replacement);
+            return apply_engine(event, out);
         }
     }
 
-    let mut state_guard = HOOK_STATE.lock().unwrap();
-    if let Some(state) = state_guard.as_mut() {
-        let action = (state.handler)(event);
-        match action {
-            KeyAction::PassThrough => {
-                return CallNextHookEx(None, n_code, w_param, l_param);
-            }
-            KeyAction::Suppress => {
-                // Swallow the keystroke
-                return LRESULT(1);
-            }
-            KeyAction::Transform {
-                backspaces_count,
-                replacement,
-            } => {
-                // Emit backspace(s) and replacement text atomically in one batch
-                let mut emitter = WindowsEmitter::new();
-                let _ = emitter.emit_transform(backspaces_count, replacement);
-                // Swallow the current key event so it is not typed
-                return LRESULT(1);
-            }
+    match feed_engine(event) {
+        KeyAction::Transform { replacement, .. } => {
+            out.text(replacement);
+            false
+        }
+        // Conversion is off (e.g. Harfiy was paused in the meantime): type both keys as they are
+        KeyAction::PassThrough => {
+            out.replay(held);
+            true
+        }
+        KeyAction::Suppress => {
+            out.replay(held);
+            false
         }
     }
+}
 
-    CallNextHookEx(None, n_code, w_param, l_param)
+/// Hand a key to the engine; returns whether the key itself should reach the application.
+fn apply_engine(event: InputEvent, out: &mut Injection) -> bool {
+    match feed_engine(event) {
+        KeyAction::PassThrough => true,
+        KeyAction::Suppress => false,
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => {
+            out.transform(backspaces_count, replacement);
+            false
+        }
+    }
 }
