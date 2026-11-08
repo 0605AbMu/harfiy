@@ -149,3 +149,24 @@ fn test_windows_uzbek_latin_layout_translation() {
     assert_eq!(count_quote, 1);
     assert_eq!(char::from_u32(buffer[0] as u32), Some('\''));
 }
+
+#[cfg(windows)]
+#[test]
+fn test_trigger_buffering_lifecycle() {
+    harfiy_platform::set_trigger_buffering(true);
+    assert!(harfiy_platform::is_trigger_buffering_enabled());
+
+    harfiy_platform::set_trigger_buffer_timeout(300);
+    assert_eq!(harfiy_platform::get_trigger_buffer_timeout(), 300);
+    harfiy_platform::set_trigger_buffer_timeout(250);
+    assert_eq!(harfiy_platform::get_trigger_buffer_timeout(), 250);
+
+    harfiy_platform::set_enable_ng(true);
+    harfiy_platform::flush_pending_trigger();
+
+    harfiy_platform::set_trigger_buffering(false);
+    assert!(!harfiy_platform::is_trigger_buffering_enabled());
+
+    harfiy_platform::set_trigger_buffering(true);
+    assert!(harfiy_platform::is_trigger_buffering_enabled());
+}

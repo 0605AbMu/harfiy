@@ -226,6 +226,8 @@ GitHub Actions avtomatik tarzda:
 
 tayyorlab, to‘g‘ridan-to‘g‘ri GitHub Releases sahifasida nashr etadi.
 
+Bundan tashqari, Microsoft Store uchun imzosiz `.msix` paketi yig‘iladi va workflow'ning `msix-store` artefakti sifatida saqlanadi (uni Partner Center'ga yuklash kerak; Store paketni o‘zi imzolaydi). Paket identity'si Partner Center'dagi **Product identity** bilan aynan mos kelishi uchun repozitoriya o‘zgaruvchilarida (`MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER`, `MSIX_PUBLISHER_DISPLAY_NAME`) belgilanadi. Lokal yig‘ish: `./packaging/windows/build_msix.ps1 -Version 1.2.3 -BinaryDir target/release -OutputDir dist`.
+
 ---
 
 ## 📊 Samaradorlik Ko‘rsatkichlari (NFR)

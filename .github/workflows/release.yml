@@ -94,6 +94,31 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+      # Unsigned MSIX for Microsoft Store submission (the Store signs it). Users cannot
+      # install an unsigned MSIX, so it is kept out of the GitHub Release. The identity
+      # must match Partner Center "Product identity"; override it with repository variables.
+      - name: Build MSIX package (Microsoft Store)
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Harfiy' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Abdumannon Shamsiyev' }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'Abdumannon Shamsiyev' }}
+        run: |
+          ./packaging/windows/build_msix.ps1 `
+            -Version "${{ steps.vars.outputs.version }}" `
+            -BinaryDir "target/x86_64-pc-windows-msvc/release" `
+            -OutputDir "dist-msix" `
+            -IdentityName $env:MSIX_IDENTITY_NAME `
+            -Publisher $env:MSIX_PUBLISHER `
+            -PublisherDisplayName $env:MSIX_PUBLISHER_DISPLAY_NAME
+
+      - name: Upload MSIX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-store
+          path: dist-msix/*.msix
+          if-no-files-found: error
+
   # ===========================================================================
   # LINUX: Ubuntu x86_64 (.deb package + .tar.gz)
   # ===========================================================================

@@ -1,7 +1,8 @@
 //! macOS implementation of keyboard interceptor and emitter using CoreGraphics and AppKit.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
 use core_foundation::base::TCFType;
@@ -9,11 +10,18 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation_sys::base::{kCFAllocatorDefault, CFIndex, CFRelease};
+use core_foundation_sys::date::CFAbsoluteTimeGetCurrent;
 use core_foundation_sys::runloop::{
-    kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetCurrent, CFRunLoopRef,
-    CFRunLoopRemoveSource, CFRunLoopRun, CFRunLoopSourceRef, CFRunLoopStop,
+    kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopAddTimer, CFRunLoopGetCurrent,
+    CFRunLoopRef, CFRunLoopRemoveSource, CFRunLoopRun, CFRunLoopSourceRef, CFRunLoopStop,
+    CFRunLoopTimerCreate, CFRunLoopTimerInvalidate, CFRunLoopTimerRef,
+    CFRunLoopTimerSetNextFireDate, CFRunLoopWakeUp,
 };
 
+use objc2::rc::autoreleasepool;
+use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+
+use crate::trigger_buffer::{BufferAction, Held, TriggerBuffer};
 use crate::{KeyboardEmitter, KeyboardInterceptor, PlatformError};
 use harfiy_engine::{InputEvent, KeyAction, SpecialKey};
 
@@ -71,6 +79,8 @@ extern "C" {
         string_length: libc::c_ulong,
         unicode_string: *const u16,
     );
+
+    fn CGEventCreateCopy(event: CGEventRef) -> CGEventRef;
 
     fn CGEventGetFlags(event: CGEventRef) -> u64;
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
@@ -141,6 +151,8 @@ const kCGNullWindowID: u32 = 0;
 const kCGEventFlagMaskCommand: u64 = 0x00100000;
 #[allow(non_upper_case_globals)]
 const kCGEventFlagMaskControl: u64 = 0x00040000;
+#[allow(non_upper_case_globals)]
+const kCGEventFlagMaskAlternate: u64 = 0x00080000;
 
 /// Synthetic keyboard event emitter for macOS using CoreGraphics events.
 #[derive(Debug, Clone, Default)]
@@ -290,6 +302,8 @@ impl MacOsInterceptor {
     /// Stop the interceptor hook and stop CFRunLoop from any thread.
     pub fn stop_hook() -> Result<(), PlatformError> {
         STOP_REQUESTED.store(true, Ordering::SeqCst);
+        // Whatever the run loop does not get to before it stops is typed when `run` exits
+        flush_pending_trigger();
         let guard = HOOK_STATE.lock().unwrap();
         if let Some(state) = guard.as_ref() {
             unsafe {
@@ -372,11 +386,65 @@ impl KeyboardInterceptor for MacOsInterceptor {
             });
         }
 
+        // Smart trigger buffering runs entirely on this thread: its timer lives on this
+        // run loop, so it never races with the tap callback.
+        lock_trigger_buffer().reset();
+        IN_FLIGHT.store(0, Ordering::SeqCst);
+        if let Ok(mut tap_thread) = TAP_THREAD.lock() {
+            *tap_thread = Some(std::thread::current().id());
+        }
+        let trigger_timer = unsafe {
+            CFRunLoopTimerCreate(
+                kCFAllocatorDefault,
+                CFAbsoluteTimeGetCurrent() + TIMER_IDLE_SECS,
+                TIMER_IDLE_SECS,
+                0,
+                0,
+                trigger_timer_fired,
+                std::ptr::null_mut(),
+            )
+        };
+        if !trigger_timer.is_null() {
+            unsafe { CFRunLoopAddTimer(current_run_loop, trigger_timer, kCFRunLoopCommonModes) };
+            if let Ok(mut guard) = TRIGGER_TIMER.lock() {
+                *guard = Some(TriggerTimer {
+                    timer: trigger_timer,
+                    run_loop: current_run_loop,
+                });
+            }
+        }
+
+        // Keep App Nap from coalescing the trigger timer, which would make a held key at the
+        // end of a word show up late. Idle system sleep stays allowed.
+        let process_info = NSProcessInfo::processInfo();
+        let activity = process_info.beginActivityWithOptions_reason(
+            NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+            &NSString::from_str("Harfiy klaviatura konvertatsiyasi"),
+        );
+
         println!("macOS klaviatura qabul qiluvchisi (CGEventTap) faollashdi.");
 
         // 4. Run CoreFoundation run loop (blocks this thread until CFRunLoopStop is called)
         unsafe {
             CFRunLoopRun();
+        }
+
+        unsafe { process_info.endActivity(&activity) };
+
+        // Type a key still held when the tap stops, so it is not lost. The tap is disabled
+        // first: nothing services it any more, and the typed keys must not wait on it.
+        unsafe { CGEventTapEnable(tap, false) };
+        autoreleasepool(|_| release_held_key());
+        if let Ok(mut guard) = TRIGGER_TIMER.lock() {
+            if let Some(trigger) = guard.take() {
+                unsafe {
+                    CFRunLoopTimerInvalidate(trigger.timer);
+                    CFRelease(trigger.timer as _);
+                }
+            }
+        }
+        if let Ok(mut tap_thread) = TAP_THREAD.lock() {
+            *tap_thread = None;
         }
 
         // 5. Clean up resources upon exit
@@ -420,6 +488,397 @@ fn map_special_key(keycode: u16) -> Option<SpecialKey> {
     }
 }
 
+// ============================================================================
+// Smart Trigger Buffering
+// ============================================================================
+
+/// Tag for keystrokes the tap types in place of physical ones. Unlike
+/// [`HARFIY_MAGIC_FLAG`], the tap counts these back in, so a physical key that
+/// overtakes them in the event stream can be re-queued behind them.
+const HARFIY_ORDERED_FLAG: i64 = 0x48415247; // "HARG"
+
+/// Replayed keystrokes that do not come back within this window were dropped
+/// and must stop holding up physical keys.
+const IN_FLIGHT_STALE_AFTER: Duration = Duration::from_millis(200);
+
+/// Typed before erasing text, so it replaces an inline autocomplete selection.
+/// ZERO WIDTH SPACE is invisible and, unlike real whitespace, does not trigger
+/// word-boundary features (autocorrect, editor input rules) on the way.
+const AUTOCOMPLETE_PLACEHOLDER: &str = "\u{200B}";
+
+/// Flags for typed text and Backspaces: no modifiers, so a held Cmd or Option
+/// cannot turn them into a shortcut or a word deletion.
+#[allow(non_upper_case_globals)]
+const kCGEventFlagMaskNonCoalesced: u64 = 0x00000100;
+
+/// macOS virtual key code of Backspace.
+const KEYCODE_BACKSPACE: u16 = 51;
+
+/// Key data needed to replay a held key exactly as the user typed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MacKey {
+    keycode: u16,
+    flags: u64,
+}
+
+/// The tap's run loop timer that types a held key once the user pauses.
+struct TriggerTimer {
+    timer: CFRunLoopTimerRef,
+    run_loop: CFRunLoopRef,
+}
+
+unsafe impl Send for TriggerTimer {}
+
+static TRIGGER_BUFFER: Mutex<TriggerBuffer<MacKey>> = Mutex::new(TriggerBuffer::new());
+static TRIGGER_TIMER: Mutex<Option<TriggerTimer>> = Mutex::new(None);
+static TAP_THREAD: Mutex<Option<ThreadId>> = Mutex::new(None);
+static BUFFER_TIMEOUT_MS: AtomicU64 = AtomicU64::new(250);
+static TRIGGER_BUFFERING_ENABLED: AtomicBool = AtomicBool::new(true);
+static CONVERSION_ACTIVE: AtomicBool = AtomicBool::new(true);
+static AUTOCOMPLETE_FIX: AtomicBool = AtomicBool::new(true);
+static ENABLE_NG_FLAG: AtomicBool = AtomicBool::new(false);
+
+/// Keystrokes typed by the tap that it has not seen come back yet (key downs only,
+/// since the tap only listens to those).
+static IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+static IN_FLIGHT_SINCE: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Enable or disable smart trigger buffering (default: true).
+pub fn set_trigger_buffering(enabled: bool) {
+    TRIGGER_BUFFERING_ENABLED.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        flush_pending_trigger();
+    }
+}
+
+/// Check if smart trigger buffering is currently enabled.
+pub fn is_trigger_buffering_enabled() -> bool {
+    TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Set trigger buffering timeout in milliseconds (default: 250).
+pub fn set_trigger_buffer_timeout(timeout_ms: u64) {
+    BUFFER_TIMEOUT_MS.store(timeout_ms, Ordering::SeqCst);
+}
+
+/// Get current trigger buffering timeout in milliseconds.
+pub fn get_trigger_buffer_timeout() -> u64 {
+    BUFFER_TIMEOUT_MS.load(Ordering::Relaxed)
+}
+
+/// Tell the tap whether conversion is active (Harfiy is not paused).
+/// While paused, trigger keys are no longer held back.
+pub fn set_conversion_active(active: bool) {
+    CONVERSION_ACTIVE.store(active, Ordering::SeqCst);
+    if !active {
+        flush_pending_trigger();
+    }
+}
+
+/// Check if conversion is active (Harfiy is not paused).
+pub fn is_conversion_active() -> bool {
+    CONVERSION_ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Enable or disable dismissing inline autocomplete before erasing characters (default: true).
+///
+/// When an application selects an inline suggestion after the typed text, a Backspace
+/// erases the suggestion instead of the typed letter. A placeholder typed first replaces
+/// the selection, so one extra Backspace then erases exactly the intended text.
+pub fn set_autocomplete_fix(enabled: bool) {
+    AUTOCOMPLETE_FIX.store(enabled, Ordering::SeqCst);
+}
+
+/// Check if inline autocomplete dismissal is enabled.
+pub fn is_autocomplete_fix_enabled() -> bool {
+    AUTOCOMPLETE_FIX.load(Ordering::Relaxed)
+}
+
+/// Configure 'ng' digraph recognition for the event tap.
+pub fn set_enable_ng(enabled: bool) {
+    ENABLE_NG_FLAG.store(enabled, Ordering::SeqCst);
+    // A held key was judged by the previous rule set.
+    flush_pending_trigger();
+}
+
+fn lock_trigger_buffer() -> MutexGuard<'static, TriggerBuffer<MacKey>> {
+    match TRIGGER_BUFFER.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn is_tap_thread() -> bool {
+    let current = std::thread::current().id();
+    TAP_THREAD
+        .lock()
+        .map(|tap| *tap == Some(current))
+        .unwrap_or(false)
+}
+
+/// Type any held trigger key immediately.
+///
+/// Callable from any thread: the work is handed to the tap's run loop so that it stays
+/// ordered with live keystrokes.
+pub fn flush_pending_trigger() {
+    if is_tap_thread() {
+        release_held_key();
+        return;
+    }
+    let guard = match TRIGGER_TIMER.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(trigger) = guard.as_ref() {
+        // Fire the trigger timer right away on the tap thread
+        unsafe {
+            CFRunLoopTimerSetNextFireDate(trigger.timer, CFAbsoluteTimeGetCurrent());
+            CFRunLoopWakeUp(trigger.run_loop);
+        }
+    }
+}
+
+extern "C" fn trigger_timer_fired(_timer: CFRunLoopTimerRef, _info: *mut libc::c_void) {
+    // The user paused (or a flush was requested): type the held key
+    autoreleasepool(|_| release_held_key());
+}
+
+/// Type the held trigger key, if any. Runs on the tap thread.
+fn release_held_key() {
+    kill_trigger_timer();
+    let mut out = Injection::default();
+    release_held_into(&mut out);
+    out.send();
+}
+
+/// Queue the held trigger key, if any, to be typed.
+fn release_held_into(out: &mut Injection) {
+    let held = lock_trigger_buffer().release();
+    if let Some(held) = held {
+        kill_trigger_timer();
+        type_released(out, held);
+    }
+}
+
+/// Queue a released key: replayed as typed, unless the engine converts it together
+/// with the letter before it (e.g. a released 'g' after an 'n' that already reached the app).
+///
+/// Unlike on Windows, a change of focus is not checked: `NSWorkspace` only notices one
+/// when the main run loop runs, so a stale answer would drop keys typed right after
+/// switching apps. Cmd+Tab still types the held key first, through the shortcut path.
+fn type_released(out: &mut Injection, held: Held<MacKey>) {
+    match feed_engine(InputEvent::Char(held.ch)) {
+        KeyAction::PassThrough => out.replay(held),
+        KeyAction::Suppress => {}
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => out.transform(backspaces_count, replacement),
+    }
+}
+
+fn set_trigger_timer(fire_in_secs: f64) {
+    let guard = match TRIGGER_TIMER.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(trigger) = guard.as_ref() {
+        unsafe {
+            CFRunLoopTimerSetNextFireDate(trigger.timer, CFAbsoluteTimeGetCurrent() + fire_in_secs);
+        }
+    }
+}
+
+/// Arm (or re-arm) the timer that types a held key once the user pauses.
+fn arm_trigger_timer() {
+    set_trigger_timer(BUFFER_TIMEOUT_MS.load(Ordering::Relaxed) as f64 / 1000.0);
+}
+
+fn kill_trigger_timer() {
+    set_trigger_timer(TIMER_IDLE_SECS);
+}
+
+/// Fire date offset that parks the trigger timer while nothing is held.
+const TIMER_IDLE_SECS: f64 = 1.0e9;
+
+/// Feed one event to the engine handler installed by `run`.
+fn feed_engine(event: InputEvent) -> KeyAction {
+    // A panic must not unwind out of the tap callback, so a poisoned lock is reused
+    let mut guard = match HOOK_STATE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    match guard.as_mut() {
+        Some(state) => (state.handler)(event),
+        None => KeyAction::PassThrough,
+    }
+}
+
+/// Return the engine to its idle state, e.g. after a shortcut changed the text unseen.
+fn reset_engine() {
+    // Escape resets the engine and has no other effect on it
+    let _ = feed_engine(InputEvent::Special(SpecialKey::Escape));
+}
+
+/// Forget everything the buffer and the engine know about the text before the caret.
+fn forget_context() {
+    lock_trigger_buffer().reset();
+    reset_engine();
+}
+
+fn note_injected(count: u32) {
+    if count == 0 {
+        return;
+    }
+    IN_FLIGHT.fetch_add(count, Ordering::SeqCst);
+    if let Ok(mut since) = IN_FLIGHT_SINCE.lock() {
+        *since = Some(Instant::now());
+    }
+}
+
+fn note_injection_arrived() {
+    // Only the tap thread touches the counter, so load + store cannot race.
+    let n = IN_FLIGHT.load(Ordering::SeqCst);
+    if n > 0 {
+        IN_FLIGHT.store(n - 1, Ordering::SeqCst);
+    }
+}
+
+/// Whether the current physical key overtook keystrokes the tap typed earlier,
+/// in which case it must be re-queued behind them to keep the typing order.
+fn overtakes_injection() -> bool {
+    if IN_FLIGHT.load(Ordering::SeqCst) == 0 {
+        return false;
+    }
+    let stale = match IN_FLIGHT_SINCE.lock() {
+        Ok(since) => !matches!(*since, Some(t) if t.elapsed() <= IN_FLIGHT_STALE_AFTER),
+        Err(_) => true,
+    };
+    if stale {
+        IN_FLIGHT.store(0, Ordering::SeqCst);
+        return false;
+    }
+    true
+}
+
+/// One keystroke the tap types.
+enum Stroke {
+    /// A synthesized key press or release, optionally carrying the exact character typed.
+    Key {
+        keycode: u16,
+        flags: u64,
+        ch: Option<char>,
+        down: bool,
+    },
+    /// An owned copy of a physical key down event, posted unchanged.
+    Copy(CGEventRef),
+}
+
+/// Keystrokes the tap types, in order, in place of physical ones.
+#[derive(Default)]
+struct Injection {
+    strokes: Vec<Stroke>,
+}
+
+impl Injection {
+    fn is_empty(&self) -> bool {
+        self.strokes.is_empty()
+    }
+
+    fn press(&mut self, keycode: u16, flags: u64, ch: Option<char>) {
+        for down in [true, false] {
+            self.strokes.push(Stroke::Key {
+                keycode,
+                flags,
+                ch,
+                down,
+            });
+        }
+    }
+
+    fn text(&mut self, text: &str) {
+        for ch in text.chars() {
+            self.press(0, kCGEventFlagMaskNonCoalesced, Some(ch));
+        }
+    }
+
+    /// Type a held key the way the user typed it: its own key code and modifiers, so
+    /// keydown-driven behaviour keeps working, and its exact character.
+    fn replay(&mut self, held: Held<MacKey>) {
+        self.press(held.key.keycode, held.key.flags, Some(held.ch));
+    }
+
+    /// Re-post the current physical key behind everything queued so far.
+    fn forward(&mut self, event: CGEventRef) {
+        let copy = unsafe { CGEventCreateCopy(event) };
+        if !copy.is_null() {
+            self.strokes.push(Stroke::Copy(copy));
+        }
+    }
+
+    /// Erase `backspaces` characters before the caret and type `replacement`.
+    fn transform(&mut self, backspaces: usize, replacement: &str) {
+        if backspaces > 0 {
+            let mut count = backspaces;
+            if AUTOCOMPLETE_FIX.load(Ordering::Relaxed) {
+                self.text(AUTOCOMPLETE_PLACEHOLDER);
+                count += 1;
+            }
+            for _ in 0..count {
+                self.press(KEYCODE_BACKSPACE, kCGEventFlagMaskNonCoalesced, None);
+            }
+        }
+        self.text(replacement);
+    }
+
+    fn send(self) {
+        if self.strokes.is_empty() {
+            return;
+        }
+        let mut key_downs = 0;
+        unsafe {
+            let source = CGEventSourceCreate(kCGEventSourceStateHIDSystem);
+            for stroke in self.strokes {
+                let (event, down) = match stroke {
+                    Stroke::Key {
+                        keycode,
+                        flags,
+                        ch,
+                        down,
+                    } => {
+                        let event = CGEventCreateKeyboardEvent(source, keycode, down);
+                        if event.is_null() {
+                            continue;
+                        }
+                        CGEventSetFlags(event, flags);
+                        if let Some(ch) = ch {
+                            let mut units = [0u16; 2];
+                            let units = ch.encode_utf16(&mut units);
+                            CGEventKeyboardSetUnicodeString(
+                                event,
+                                units.len() as _,
+                                units.as_ptr(),
+                            );
+                        }
+                        (event, down)
+                    }
+                    Stroke::Copy(event) => (event, true),
+                };
+                CGEventSetIntegerValueField(event, kCGEventSourceUserData, HARFIY_ORDERED_FLAG);
+                CGEventPost(kCGSessionEventTap, event);
+                CFRelease(event as _);
+                if down {
+                    key_downs += 1;
+                }
+            }
+            if !source.is_null() {
+                CFRelease(source as _);
+            }
+        }
+        note_injected(key_downs);
+    }
+}
+
 /// Native macOS CGEventTap callback.
 unsafe extern "C" fn macos_event_tap_callback(
     _proxy: CGEventTapProxy,
@@ -429,10 +888,18 @@ unsafe extern "C" fn macos_event_tap_callback(
 ) -> CGEventRef {
     // If the system temporarily disabled the tap due to timeout, re-enable it immediately
     if r#type == kCGEventTapDisabledByTimeout {
-        let guard = HOOK_STATE.lock().unwrap();
-        if let Some(state) = guard.as_ref() {
-            CGEventTapEnable(state.tap_port, true);
+        {
+            let guard = HOOK_STATE.lock().unwrap();
+            if let Some(state) = guard.as_ref() {
+                CGEventTapEnable(state.tap_port, true);
+            }
         }
+        // Keys went past the tap unseen meanwhile: type the held key now and start over
+        autoreleasepool(|_| {
+            release_held_key();
+            forget_context();
+        });
+        IN_FLIGHT.store(0, Ordering::SeqCst);
         return event;
     }
 
@@ -451,76 +918,190 @@ unsafe extern "C" fn macos_event_tap_callback(
         return event;
     }
 
-    // Infinite loop protection: ignore synthetic events injected by Harfiy
     let user_data = CGEventGetIntegerValueField(event, kCGEventSourceUserData);
+
+    // Keystrokes typed by the tap coming back through it: count them in
+    if user_data == HARFIY_ORDERED_FLAG {
+        note_injection_arrived();
+        return event;
+    }
+
+    // Infinite loop protection: ignore synthetic events injected by Harfiy
     if user_data == HARFIY_MAGIC_FLAG as i64 {
         return event;
     }
 
-    // Do not interfere if Command or Control modifier is down (e.g. Cmd+C, Cmd+V, Ctrl+C).
-    // Note: Option (Alternate) is intentionally NOT blocked because on macOS international and
-    // custom layouts (e.g. Uzbek Latin on macOS), Option is used to type characters and diacritics.
+    // The tap thread has no autorelease pool of its own for the AppKit calls below
+    autoreleasepool(|_| {
+        let mut out = Injection::default();
+        let forward = handle_key_down(event, &mut out);
+
+        // Once anything is queued, the current key is re-posted behind it instead of passed
+        // on, so the application receives every keystroke in the order it was typed.
+        if forward && out.is_empty() && !overtakes_injection() {
+            return event;
+        }
+        if forward {
+            out.forward(event);
+        }
+        out.send();
+        std::ptr::null_mut()
+    })
+}
+
+/// Decide what happens to a physical key press. Keystrokes to type go into `out`;
+/// returns whether the key itself should still reach the application, after `out`.
+unsafe fn handle_key_down(event: CGEventRef, out: &mut Injection) -> bool {
+    // Do not interfere with Command or Control shortcuts (e.g. Cmd+C, Cmd+V, Ctrl+C),
+    // excluded applications, or fullscreen games while Game Mode is active. What such
+    // a key does to the text is unknown, so the engine starts over.
+    // Note: Option (Alternate) is intentionally NOT treated as a shortcut because on macOS
+    // international and custom layouts (e.g. Uzbek Latin on macOS), Option is used to type
+    // characters and diacritics.
+    // Option+Backspace deletes a whole word, which neither the buffer nor the engine models.
     let flags = CGEventGetFlags(event);
-    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl)) != 0 {
-        return event;
-    }
-
-    // Do not interfere if active application is excluded
-    if is_current_app_excluded() {
-        return event;
-    }
-
-    // Do not interfere if Game Mode is active
-    if is_foreground_fullscreen() {
-        return event;
-    }
-
     let keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode) as u16;
+    let word_delete = keycode == KEYCODE_BACKSPACE && (flags & kCGEventFlagMaskAlternate) != 0;
+    if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl)) != 0
+        || word_delete
+        || is_current_app_excluded()
+        || is_foreground_fullscreen()
+    {
+        release_held_into(out);
+        forget_context();
+        return true;
+    }
 
     // Determine InputEvent
     let input_event = if let Some(special) = map_special_key(keycode) {
-        Some(InputEvent::Special(special))
+        InputEvent::Special(special)
     } else {
         let mut actual_len: libc::c_ulong = 0;
-        let mut chars = [0u16; 4];
-        CGEventKeyboardGetUnicodeString(event, 4, &mut actual_len, chars.as_mut_ptr());
-        if actual_len > 0 {
-            char::decode_utf16(chars[..actual_len as usize].iter().copied())
-                .next()
-                .and_then(|r| r.ok())
-                .map(InputEvent::Char)
-        } else {
-            None
+        let mut units = [0u16; 20];
+        CGEventKeyboardGetUnicodeString(
+            event,
+            units.len() as _,
+            &mut actual_len,
+            units.as_mut_ptr(),
+        );
+        let len = (actual_len as usize).min(units.len());
+        let mut chars = char::decode_utf16(units[..len].iter().copied());
+        match (chars.next(), chars.next()) {
+            (Some(Ok(ch)), None) => InputEvent::Char(ch),
+            // A key without a character (e.g. a dead key): type the held key first, but
+            // keep the engine state, since a composed character may still complete a pair
+            (None, _) => {
+                release_held_into(out);
+                return true;
+            }
+            // A key typing several characters at once (custom layouts) is not converted
+            _ => {
+                release_held_into(out);
+                forget_context();
+                return true;
+            }
         }
     };
 
-    if let Some(ev) = input_event {
-        let mut guard = HOOK_STATE.lock().unwrap();
-        if let Some(state) = guard.as_mut() {
-            let action = (state.handler)(ev);
-            match action {
-                KeyAction::PassThrough => return event,
-                KeyAction::Suppress => {
-                    // Swallow the keystroke
-                    return std::ptr::null_mut();
-                }
-                KeyAction::Transform {
-                    backspaces_count,
-                    replacement,
-                } => {
-                    // 1. Emit backspace(s) to erase previous character(s)
-                    let mut emitter = MacOsEmitter::new();
-                    let _ = emitter.emit_backspace(backspaces_count);
-                    // 2. Emit replacement unicode string
-                    let _ = emitter.emit_unicode(replacement);
-                    // 3. Swallow the current key event so it is not typed
-                    return std::ptr::null_mut();
-                }
+    // Smart Trigger Buffering (eliminates autocomplete conflicts and visual flicker)
+    if !TRIGGER_BUFFERING_ENABLED.load(Ordering::Relaxed)
+        || !CONVERSION_ACTIVE.load(Ordering::Relaxed)
+    {
+        release_held_into(out);
+        return apply_engine(input_event, out);
+    }
+
+    let key = MacKey { keycode, flags };
+
+    let (held_before, step) = {
+        let mut buffer = lock_trigger_buffer();
+        buffer.set_enable_ng(ENABLE_NG_FLAG.load(Ordering::Relaxed));
+        let held_before = buffer.held();
+        let step = match input_event {
+            InputEvent::Char(ch) => buffer.on_char(ch, key),
+            InputEvent::Special(special) => buffer.on_special(special),
+        };
+        (held_before, step)
+    };
+
+    if let Some(held) = step.release {
+        kill_trigger_timer();
+        type_released(out, held);
+    }
+
+    match step.action {
+        BufferAction::Pass => apply_engine(input_event, out),
+        BufferAction::Hold => {
+            // Swallow the trigger so the application (and its autocomplete) does not see it yet
+            arm_trigger_timer();
+            false
+        }
+        BufferAction::Convert { .. } => {
+            kill_trigger_timer();
+            match held_before {
+                Some(held) => convert_held_pair(held, input_event, out),
+                None => apply_engine(input_event, out),
             }
+        }
+        BufferAction::Cancel => {
+            // Backspace erased the held key, which the application never saw. Show the
+            // engine both, so it leaves the post-conversion (Instant Undo) state as usual.
+            kill_trigger_timer();
+            if let Some(held) = held_before {
+                let _ = feed_engine(InputEvent::Char(held.ch));
+                let _ = feed_engine(InputEvent::Special(SpecialKey::Backspace));
+            }
+            false
+        }
+    }
+}
+
+/// Type the conversion of a held key and the key completing its pair. The engine has the
+/// final say; the buffer only spares the Backspace that would collide with autocomplete.
+fn convert_held_pair(held: Held<MacKey>, event: InputEvent, out: &mut Injection) -> bool {
+    match feed_engine(InputEvent::Char(held.ch)) {
+        KeyAction::PassThrough => {}
+        KeyAction::Suppress => return apply_engine(event, out),
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => {
+            // The engine paired the held key with the letter before it instead
+            out.transform(backspaces_count, replacement);
+            return apply_engine(event, out);
         }
     }
 
-    event
+    match feed_engine(event) {
+        KeyAction::Transform { replacement, .. } => {
+            out.text(replacement);
+            false
+        }
+        // Conversion is off (e.g. Harfiy was paused in the meantime): type both keys as they are
+        KeyAction::PassThrough => {
+            out.replay(held);
+            true
+        }
+        KeyAction::Suppress => {
+            out.replay(held);
+            false
+        }
+    }
+}
+
+/// Hand a key to the engine; returns whether the key itself should reach the application.
+fn apply_engine(event: InputEvent, out: &mut Injection) -> bool {
+    match feed_engine(event) {
+        KeyAction::PassThrough => true,
+        KeyAction::Suppress => false,
+        KeyAction::Transform {
+            backspaces_count,
+            replacement,
+        } => {
+            out.transform(backspaces_count, replacement);
+            false
+        }
+    }
 }
 
 // ============================================================================
