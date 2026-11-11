@@ -96,12 +96,13 @@ jobs:
 
       # Unsigned MSIX for Microsoft Store submission (the Store signs it). Users cannot
       # install an unsigned MSIX, so it is kept out of the GitHub Release. The identity
-      # must match Partner Center "Product identity"; override it with repository variables.
+      # must match Partner Center "Product identity" (Store ID 9NFK02T5JBQ9); repository
+      # variables override these defaults.
       - name: Build MSIX package (Microsoft Store)
         shell: pwsh
         env:
-          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Harfiy' }}
-          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Abdumannon Shamsiyev' }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'AbdumannonShamsiyev.Harfiy' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=B59EC37F-75F0-4379-86FB-39935700B327' }}
           MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'Abdumannon Shamsiyev' }}
         run: |
           ./packaging/windows/build_msix.ps1 `

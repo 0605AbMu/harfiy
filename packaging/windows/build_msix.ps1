@@ -15,8 +15,8 @@ param(
     [Parameter(Mandatory = $true)][string]$BinaryDir,
     [Parameter(Mandatory = $true)][string]$OutputDir,
     # Must match "Product identity" in Partner Center exactly
-    [string]$IdentityName = "Harfiy",
-    [string]$Publisher = "CN=Abdumannon Shamsiyev",
+    [string]$IdentityName = "AbdumannonShamsiyev.Harfiy",
+    [string]$Publisher = "CN=B59EC37F-75F0-4379-86FB-39935700B327",
     [string]$PublisherDisplayName = "Abdumannon Shamsiyev"
 )
 
