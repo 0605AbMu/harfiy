@@ -1,0 +1,15 @@
+{
+  "_comment": "Samsung Keyboard (Honeyboard) on SM-A556E, 1080x2340, number row on, English (US). Each key is a list of taps; Samsung returns to letters after typing an apostrophe.",
+  "rows": [
+    {"keys": "qwertyuiop", "x0": 67, "dx": 105, "y": 1665},
+    {"keys": "asdfghjkl", "x0": 120, "dx": 105, "y": 1815},
+    {"keys": "zxcvbnm", "x0": 225, "dx": 105, "y": 1965}
+  ],
+  "keys": {
+    " ": [[540, 2115]],
+    ",": [[225, 2115]],
+    ".": [[855, 2115]],
+    "<": [[995, 1965]],
+    "'": [[93, 2115], [330, 1965]]
+  }
+}

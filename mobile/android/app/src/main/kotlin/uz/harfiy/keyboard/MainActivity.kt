@@ -74,6 +74,7 @@ class MainActivity : Activity() {
     private var batterySubtitle: TextView? = null
     private var batteryStatusPill: TextView? = null
     private var activeWizardDialog: SetupWizardDialog? = null
+    private var realtimeTipCard: View? = null
 
     private var isUpdatingUI = false
 
@@ -296,6 +297,9 @@ class MainActivity : Activity() {
         heroMainRow.addView(heroSwitch)
         heroCard.addView(heroMainRow)
 
+        // Optional real-time tip: only for a keyboard seen composing, until closed.
+        realtimeTipCard = createRealtimeTipCard(::dp).also { root.addView(it) }
+
         // =====================================================================
         // 3. GROUPED SETTINGS (iOS/Material 3 uslubidagi sozlamalar)
         // =====================================================================
@@ -383,7 +387,7 @@ class MainActivity : Activity() {
                 "↩️",
                 "#EFF6FF",
                 "Xatoni qaytarish",
-                "Harf noto‘g‘ri o‘zgarganda, Backspace bosilsa asl holiga qaytadi",
+                "O‘girilgan zahoti ⌫ bosilsa, asl harflar qaytadi (klaviatura takliflari o‘chiq bo‘lganda)",
                 prefs.getBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, true)
             ) { isChecked ->
                 prefs.edit(commit = true) { putBoolean(HarfiyAccessibilityService.KEY_INSTANT_UNDO, isChecked) }
@@ -733,6 +737,55 @@ class MainActivity : Activity() {
         }
         wizardRow.addView(wizardArrow)
         settingsCard.addView(wizardRow)
+        settingsCard.addView(createDivider())
+
+        // Diagnostika: oxirgi qarorlar jurnali (faqat pozitsiya va uzunliklar, matn yo'q)
+        val diagRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padV = dp(10)
+            setPadding(0, padV, 0, padV)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { shareDiagnostics() }
+        }
+        diagRow.addView(TextView(this).apply {
+            text = "🩺"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
+            }
+            background = GradientDrawable().apply {
+                setColor("#F1F5F9".toColorInt())
+                cornerRadius = dp(10).toFloat()
+            }
+        })
+        diagRow.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8)
+            }
+            addView(TextView(context).apply {
+                text = "Xato haqida xabar berish"
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor("#0F172A".toColorInt())
+            })
+            addView(TextView(context).apply {
+                text = "Diagnostika jurnalini ulashish (yozgan matningiz kirmaydi)"
+                textSize = 12f
+                setTextColor("#64748B".toColorInt())
+                setPadding(0, dp(1), 0, 0)
+            })
+        })
+        diagRow.addView(TextView(this).apply {
+            text = "›"
+            textSize = 22f
+            setTextColor("#94A3B8".toColorInt())
+            setPadding(dp(4), 0, dp(4), 0)
+        })
+        settingsCard.addView(diagRow)
 
         // =====================================================================
         // 4. SEHRLI MATN MAYDONI VA SINOV (Unified Playground & Converter)
@@ -787,6 +840,7 @@ class MainActivity : Activity() {
             }
         }
         convertCard.addView(convertInput)
+        convertInput.addTextChangedListener(KeyboardMode.watchComposing(this) { updateRealtimeTip() })
 
         // Action Buttons Row
         val convertBtnRow = LinearLayout(this).apply {
@@ -1289,7 +1343,98 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Shares the edit session's recent decisions so a user can report a misbehaving app.
+     * The log holds positions, lengths and timings only, never typed text; the user picks
+     * where it goes in the system share sheet.
+     */
+    private fun shareDiagnostics() {
+        val report = buildString {
+            appendLine("Harfiy ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}")
+            val ime = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            appendLine("Klaviatura: ${ime ?: "?"}")
+            appendLine("Xizmat: ${if (HarfiyAccessibilityService.instance != null) "ishlayapti" else "o‘chiq"}")
+            appendLine()
+            append(HarfiySession.diagnostics())
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Harfiy diagnostika")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        startActivity(Intent.createChooser(send, "Diagnostikani ulashish"))
+    }
+
+    private fun updateRealtimeTip() {
+        realtimeTipCard?.visibility = if (KeyboardMode.shouldShowTip(this)) View.VISIBLE else View.GONE
+    }
+
+    private fun createRealtimeTipCard(dp: (Int) -> Int): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = dp(14)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                setColor("#EEF2FF".toColorInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), "#C7D2FE".toColorInt())
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(12) }
+        }
+        card.addView(TextView(this).apply {
+            text = "⚡ Ixtiyoriy: harflarni yozilishi bilan o‘girish"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor("#1E1B4B".toColorInt())
+        })
+        card.addView(TextView(this).apply {
+            text = "${KeyboardMode.keyboardName(this@MainActivity)} takliflari yoniq: Harfiy so‘zni yozib bo‘lgach o‘giradi — bu to‘g‘ri ishlaydi. " +
+                "Takliflarni o‘chirsangiz, harflar darhol o‘giriladi va ⌫ bilan qaytarish ishlaydi, " +
+                "lekin klaviatura takliflari, avtomatik tuzatish va «swipe» yozish ishlamaydi.\n\n" +
+                KeyboardMode.predictiveTextHint(this@MainActivity)
+            textSize = 12f
+            setTextColor("#3730A3".toColorInt())
+            setLineSpacing(dp(1).toFloat(), 1.15f)
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        buttons.addView(TextView(this).apply {
+            text = "Yopish"
+            textSize = 13f
+            setTextColor("#64748B".toColorInt())
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            isClickable = true
+            setOnClickListener {
+                KeyboardMode.dismissTip(this@MainActivity)
+                updateRealtimeTip()
+            }
+        })
+        buttons.addView(TextView(this).apply {
+            text = "Sozlamalarni ochish"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                setColor("#4F46E5".toColorInt())
+                cornerRadius = dp(10).toFloat()
+            }
+            isClickable = true
+            setOnClickListener { KeyboardMode.openKeyboardSettings(this@MainActivity) }
+        })
+        card.addView(buttons)
+        return card
+    }
+
     private fun updateStatus() {
+        updateRealtimeTip()
         val isServiceRunning = HarfiyAccessibilityService.instance != null
         val isServiceEnabled = isAccessibilityServiceEnabled()
         val isPaused = HarfiyAccessibilityService.isPaused(this)

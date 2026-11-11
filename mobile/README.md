@@ -10,7 +10,9 @@ Ushbu katalog **Harfiy** avto-konvertatsiya tizimining **iOS** (Apple Keyboard E
 mobile/
 ├── scripts/
 │   ├── build_ios.sh       # iOS XCFramework (libharfiy_ffi.a) yig'ish skripti
-│   └── build_android.sh   # Android jniLibs (libharfiy_ffi.so) yig'ish skripti
+│   ├── build_android.sh   # Android jniLibs (libharfiy_ffi.so) yig'ish skripti
+│   ├── e2e_android.py     # Haqiqiy qurilmada klaviaturani bosib test qilish
+│   └── keyboard_layouts/  # e2e uchun klaviatura tugmalari koordinatalari
 ├── ios/                   # Swift / SwiftUI iOS loyihasi
 │   ├── Frameworks/        # HarfiyCore.xcframework (avtomatik yaratiladi)
 │   ├── HarfiyApp/         # Container App (yo'riqnoma, sinov maydoni)
@@ -18,10 +20,12 @@ mobile/
 └── android/               # Kotlin Android Studio loyihasi
     ├── app/
     │   ├── src/main/jniLibs/  # .so kutubxonalari (avtomatik yaratiladi)
-    │   └── src/main/kotlin/uz/harfiy/keyboard/
-    │       ├── HarfiyEngine.kt                # JNI Bridge
-    │       ├── HarfiyAccessibilityService.kt  # Tizim klaviaturasi (Gboard, Samsung) ustida ishlovchi xizmat
-    │       └── MainActivity.kt                # Boshqaruv paneli va sinov maydoni
+    │   ├── src/main/kotlin/uz/harfiy/keyboard/
+    │   │   ├── HarfiyEngine.kt                # JNI Bridge (qoidalar)
+    │   │   ├── HarfiySession.kt               # JNI Bridge (tahrir sessiyasi, crates/ffi/src/session.rs)
+    │   │   ├── HarfiyAccessibilityService.kt  # Tizim klaviaturasi (Gboard, Samsung) ustida ishlovchi xizmat
+    │   │   └── MainActivity.kt                # Boshqaruv paneli va sinov maydoni
+    │   └── src/debug/.../TestbedActivity.kt   # Faqat debug: e2e test maydonlari
 ```
 
 ---
@@ -85,6 +89,32 @@ Ushbu skript `cargo-ndk` orqali `arm64-v8a`, `armeabi-v7a` va `x86_64` uchun `li
    ```
 3. Ilova ochilgach, **«Sozlamalardan Harfiy'ni yoqish»** tugmasini bosing va Maxsus imkoniyatlar (Accessibility) bo'limidan Harfiy'ni yoqing.
 4. Endi Telegram, WhatsApp, Notes yoki istalgan ilovada sevimli klaviaturangizda bemalol yozavering!
+
+### Android xizmati qanday ishlaydi (barqarorlik)
+
+Harfiy va foydalanuvchi klaviaturasi bitta matnga yozadi, lekin accessibility `InputConnection`da atomar almashtirish ham, `beginBatchEdit` ham yo'q. Shuning uchun asosiy qoida: **ishonch bo'lmasa — matnga tegilmaydi**. Barcha qarorlar Rust'dagi `crates/ffi/src/session.rs` holat mashinasida; Kotlin xizmati faqat hodisalarni uzatadi va so'ralgan o'qish/yozishni bajaradi.
+
+1. Klaviatura so'z yozayotganda (composing) kutiladi; composing klaviaturalarda oxirgi o'zgarishdan keyin 100 ms sokinlik kutiladi (tez yozish oqimi ichida yozilmaydi). Oddiy (composing'siz) klaviaturada konversiya darhol va Instant Undo bilan ishlaydi.
+2. Yozishdan oldin matn qayta o'qiladi: kursor foydalanuvchi oxirgi yozgan joyda, matn oxirgi hodisadagi bilan bir xil va (offset bor bo'lsa) ikkala kanal kursori mos bo'lishi shart.
+3. Matn hech qachon belgilanmaydi (`setSelection` ishlatilmaydi): kursordan oldingi matn `deleteSurroundingText` bilan o'chirilib, `commitText` bilan yoziladi. Samsung Keyboard vaqtinchalik belgilashni ko'rib, tez yozishda keyingi harfni noto'g'ri joyga yozishi qurilmada o'lchangan. Bu `offset == -1` muharrirlarda (Jetpack Compose) ham to'g'ri ishlaydi.
+4. Har bir yozuv qayta o'qib tasdiqlanadi; yozuv echo'si klaviatura matnini almashtirgani ko'rinsa ham. Tasdiqlanmasa, shu maydonda Harfiy o'chadi; bitta ilovada 2 marta takrorlansa, xizmat qayta ishga tushguncha o'sha ilova o'tkazib yuboriladi.
+5. Echo (o'z tahririmiz hodisasi) vaqt bo'yicha emas, kutilgan o'zgarish shakli bo'yicha aniqlanadi.
+6. WebView (Chromium) accessibility'ga `getSurroundingText` bermaydi: u yerda Harfiy hech narsa yozmaydi.
+7. Release build'da `Log.d/i/v` R8 orqali olib tashlanadi; xizmat hech qachon yozilgan matnni log qilmaydi. **Sozlamalar → Xato haqida xabar berish** faqat pozitsiya va uzunliklardan iborat diagnostika jurnalini ulashadi.
+
+### Testlar
+
+```bash
+# Holat mashinasi + qurilma simulyatori (tasodifiy hodisa tartiblari, composing va oddiy klaviatura, offset -1)
+cargo test -p harfiy-ffi
+```
+
+```bash
+# Haqiqiy qurilmada: debug build o'rnatilgan va Harfiy yoqilgan bo'lishi kerak
+python3 mobile/scripts/e2e_android.py --layout mobile/scripts/keyboard_layouts/samsung_sm-a556e.json
+```
+
+`e2e_android.py` debug-only `TestbedActivity`dagi uch xil maydonga (`EditText`, offset bermaydigan maydon, WebView) ekrandagi klaviaturani bosib yozadi va natijani kutilgan konversiya bilan solishtiradi. Boshqa qurilma/klaviatura uchun `keyboard_layouts/` ga koordinatalar faylini qo'shing.
 
 ---
 

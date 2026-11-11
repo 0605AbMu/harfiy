@@ -21,3 +21,12 @@
 
 # Preserve annotations and line numbers for crash debugging
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
+
+# Privacy: release builds must never write typing activity to logcat. Debug, verbose and
+# info logs are removed entirely; warnings and errors (which never include typed text)
+# stay for crash triage.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}

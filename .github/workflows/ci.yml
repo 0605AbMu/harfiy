@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Engine rules and the mobile edit session, including the device simulation tests
+  # (crates/ffi/tests/session_sim.rs) that guard the Android accessibility service.
+  engine-and-session:
+    name: Engine & mobile session tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Test
+        run: cargo test -p harfiy-engine -p harfiy-ffi

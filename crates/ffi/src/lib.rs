@@ -8,6 +8,7 @@ pub mod c_api;
 pub mod edits;
 #[cfg(target_os = "android")]
 pub mod jni_api;
+pub mod session;
 
 #[cfg(not(target_os = "android"))]
 pub use c_api::*;

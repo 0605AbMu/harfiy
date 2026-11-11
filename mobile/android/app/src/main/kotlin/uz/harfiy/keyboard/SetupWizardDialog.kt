@@ -45,6 +45,9 @@ import android.widget.*
  *           Zero technical jargon! Explains with Wi-Fi & flashlight analogy.
  * - Step 4: Interactive Live Test & Undo Rule (REQUIRED) -> Must type a test word and witness
  *           the conversion before the finish button unlocks!
+ * - Optional step: Real-time mode -> shown only when the test field saw the keyboard compose
+ *           (predictive text on). Explains the trade-off, opens the keyboard's settings and
+ *           re-checks on return. Never required: Harfiy works with composing keyboards too.
  */
 class SetupWizardDialog(
     private val activity: Activity,
@@ -72,6 +75,10 @@ class SetupWizardDialog(
     private var finishButton: Button? = null
     private var hasTypingTested = false
     private var stepBadge: TextView? = null
+
+    // Optional real-time step: whether the live test saw the keyboard compose.
+    private var liveTestComposes: Boolean? = null
+    private val realtimeStep get() = totalSteps + 1
 
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
@@ -219,7 +226,11 @@ class SetupWizardDialog(
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            if (currentStep == 2 && isAccessibilityEnabled()) {
+            if (currentStep == realtimeStep && returningFromKeyboardSettings) {
+                // Back from the keyboard's settings: fresh field, fresh check.
+                returningFromKeyboardSettings = false
+                renderStep(realtimeStep)
+            } else if (currentStep == 2 && isAccessibilityEnabled()) {
                 renderStep(2)
             } else if (isXiaomi && currentStep == 3 && isXiaomiAutostartEnabled()) {
                 renderStep(3)
@@ -246,7 +257,7 @@ class SetupWizardDialog(
     }
 
     private fun updateDots(step: Int) {
-        stepBadge?.text = "$step / $totalSteps"
+        stepBadge?.text = if (step > totalSteps) "Ixtiyoriy" else "$step / $totalSteps"
         val dp = activity.resources.displayMetrics.density
         for (i in 0 until totalSteps) {
             val dot = stepDots[i]
@@ -271,6 +282,10 @@ class SetupWizardDialog(
         updateDots(step)
         contentContainer.removeAllViews()
 
+        if (step == realtimeStep) {
+            buildStepRealtimeOptional()
+            return
+        }
         if (isXiaomi) {
             when (step) {
                 1 -> buildStep1Welcome()
@@ -923,15 +938,23 @@ class SetupWizardDialog(
                 Toast.makeText(activity, "Iltimos, avval maydonga biror so‘z yozib sinab ko‘ring!", Toast.LENGTH_SHORT).show()
                 return@createPrimaryButton
             }
-            prefs.edit { putBoolean("has_completed_wizard", true) }
-            dismiss()
-            onFinished()
+            if (liveTestComposes == true) {
+                renderStep(realtimeStep)
+            } else {
+                finishWizard()
+            }
         }.apply {
             isEnabled = false
             alpha = 0.5f
             (background as GradientDrawable).setColor("#94A3B8".toColorInt())
         }
         contentContainer.addView(finishButton)
+
+        // Learns whether the keyboard composes, for the optional real-time step.
+        liveTestComposes = null
+        liveTestEditText?.addTextChangedListener(KeyboardMode.watchComposing(activity) { composes ->
+            liveTestComposes = composes
+        })
 
         // TextWatcher: Strict check for transformation
         liveTestEditText?.addTextChangedListener(object : TextWatcher {
@@ -980,6 +1003,118 @@ class SetupWizardDialog(
                 }
             }
         })
+    }
+
+    private fun finishWizard() {
+        prefs.edit { putBoolean("has_completed_wizard", true) }
+        dismiss()
+        onFinished()
+    }
+
+    private var returningFromKeyboardSettings = false
+
+    // =========================================================================
+    // IXTIYORIY QADAM: Real-time rejim (klaviatura takliflarini o‘chirish)
+    // =========================================================================
+    private fun buildStepRealtimeOptional() {
+        val keyboard = KeyboardMode.keyboardName(activity)
+
+        contentContainer.addView(TextView(context).apply {
+            text = "⚡"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(52), dp(52)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(8)
+            }
+            background = GradientDrawable().apply {
+                setColor("#EEF2FF".toColorInt())
+                cornerRadius = dp(16).toFloat()
+            }
+        })
+        contentContainer.addView(TextView(context).apply {
+            text = "Ixtiyoriy: Real-time rejim"
+            textSize = 19f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor("#0F172A".toColorInt())
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 0, 0, dp(4))
+        })
+        contentContainer.addView(TextView(context).apply {
+            text = "Harfiy hozir ham to‘g‘ri ishlaydi: $keyboard so‘zni yozib bo‘lgach (bo‘sh joy yoki tinish belgisidan keyin) o‘giradi."
+            textSize = 13f
+            setTextColor("#475569".toColorInt())
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = dp(10)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                setColor("#F8FAFC".toColorInt())
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), "#E2E8F0".toColorInt())
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+        fun line(t: String, bold: Boolean = false, color: String = "#334155") = TextView(context).apply {
+            text = t
+            textSize = if (bold) 12.5f else 11.5f
+            if (bold) typeface = Typeface.DEFAULT_BOLD
+            setTextColor(color.toColorInt())
+            setLineSpacing(dp(1).toFloat(), 1.15f)
+            setPadding(0, 0, 0, dp(4))
+        }
+        card.addView(line("Takliflarni o‘chirsangiz:", bold = true, color = "#0F172A"))
+        card.addView(line("✅ harflar yozilishi bilan darhol o‘giriladi (sh → ş)"))
+        card.addView(line("✅ ⌫ bilan asl harflarni qaytarish ishlaydi"))
+        card.addView(line("⚠️ klaviatura takliflari, avtomatik tuzatish va «swipe» yozish ishlamaydi", color = "#B45309"))
+        card.addView(line("🔧 " + KeyboardMode.predictiveTextHint(activity), color = "#1E40AF"))
+        contentContainer.addView(card)
+
+        // Self-check: the user types here after changing the setting.
+        val status = TextView(context).apply {
+            text = "Sozlamani o‘zgartirgach, pastda bir necha harf yozib tekshiring:"
+            textSize = 11.5f
+            setTextColor("#64748B".toColorInt())
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        val field = EditText(context).apply {
+            hint = "salom shahar..."
+            setHintTextColor("#94A3B8".toColorInt())
+            textSize = 15f
+            setTextColor("#0F172A".toColorInt())
+            maxLines = 1
+            addTextChangedListener(KeyboardMode.watchComposing(activity) { composes ->
+                status.apply {
+                    if (composes) {
+                        text = "ℹ️ Takliflar hali yoniq: so‘z tugagach o‘giriladi. Bu ham to‘g‘ri ishlaydi."
+                        setTextColor("#B45309".toColorInt())
+                    } else {
+                        text = "🎉 Real-time rejim yoqildi: harflar yozilishi bilan o‘giriladi!"
+                        setTextColor("#059669".toColorInt())
+                    }
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+            })
+        }
+        contentContainer.addView(field)
+        contentContainer.addView(status)
+
+        contentContainer.addView(createPrimaryButton("🔧 $keyboard sozlamalarini ochish") {
+            returningFromKeyboardSettings = true
+            KeyboardMode.openKeyboardSettings(activity)
+        })
+        contentContainer.addView(createPrimaryButton("Yakunlash va Tayyor 🚀") { finishWizard() }.apply {
+            (background as GradientDrawable).setColor("#0F172A".toColorInt())
+        })
+        contentContainer.addView(createSecondaryButton("Hozircha kerak emas") { finishWizard() })
     }
 
     // =========================================================================
