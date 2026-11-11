@@ -123,8 +123,11 @@ jobs:
   # ===========================================================================
   # LINUX: Ubuntu x86_64 (.deb package + .tar.gz)
   # ===========================================================================
+  # Temporarily disabled: the Linux keyboard hook is still WIP. To re-enable, remove
+  # `if: false` and add build-linux back to publish-release's `needs`.
   build-linux:
     name: Linux (Ubuntu x86_64)
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -276,7 +279,7 @@ jobs:
   # ===========================================================================
   publish-release:
     name: Publish Release to GitHub
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
