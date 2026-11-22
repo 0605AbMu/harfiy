@@ -12,8 +12,8 @@ android {
         applicationId = "uz.harfiy.keyboard"
         minSdk = 33
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.2.6"
+        versionCode = 7
+        versionName = "1.2.7"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
