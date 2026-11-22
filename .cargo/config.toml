@@ -1,0 +1,8 @@
+# Link the MSVC C runtime statically so harfiy.exe does not need VCRUNTIME140.dll.
+# Without this, the app fails to start on PCs that lack the Visual C++ Redistributable
+# (a common case for fresh Windows installs and Microsoft Store users).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

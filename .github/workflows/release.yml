@@ -50,8 +50,26 @@ jobs:
           target: x86_64-pc-windows-msvc
           cache: true
 
+      # Static CRT: harfiy.exe must not depend on VCRUNTIME140.dll, which many PCs lack.
+      # Set via RUSTFLAGS here because setup-rust-toolchain exports RUSTFLAGS, and that
+      # env var overrides the rustflags in .cargo/config.toml.
       - name: Build release binary
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --target x86_64-pc-windows-msvc -p harfiy-daemon
+
+      - name: Verify harfiy.exe does not need the VC++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          $deps = & $dumpbin.FullName /dependents "target\x86_64-pc-windows-msvc\release\harfiy.exe"
+          $deps
+          if ($deps -match '(?i)vcruntime|msvcp|api-ms-win-crt') {
+              Write-Error "harfiy.exe still links the dynamic VC++ runtime"
+              exit 1
+          }
 
       - name: Build Windows Installers (.exe & .zip)
         shell: pwsh
